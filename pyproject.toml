@@ -4,4 +4,11 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "rich>=14.2.0",
+    "textual>=6.10.0",
+    "typer>=0.20.0",
+]
+
+[project.scripts]
+timemap = "timemap.main:run"
