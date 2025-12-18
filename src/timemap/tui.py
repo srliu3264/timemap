@@ -1,57 +1,224 @@
 from textual.app import App, ComposeResult
 from textual.containers import Grid, Vertical, Horizontal, Container
-from textual.widgets import Header, Footer, Button, Label, ListView, ListItem
+from textual.widgets import Header, Footer, Button, Label, ListView, ListItem, Input
 from textual.screen import ModalScreen
 from textual.binding import Binding
-from textual import on
+from textual import on, events
 import calendar
 from datetime import date, timedelta, datetime
 import subprocess
 import os
+import re
+import shutil
 
-from . import db
+from . import db, config
 
-# --- HELP SCREEN ---
+# --- UTILS ---
+
+
+def open_url(url):
+    try:
+        subprocess.Popen(['xdg-open', url], start_new_session=True,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
+
+
+def get_terminal_cmd():
+    """Detects the user's terminal emulator."""
+    terminals = ["kitty", "alacritty", "wezterm",
+                 "gnome-terminal", "xfce4-terminal", "xterm"]
+    env_term = os.environ.get("TERMINAL")
+    if env_term and shutil.which(env_term):
+        return env_term
+    for term in terminals:
+        if shutil.which(term):
+            return term
+    return "x-terminal-emulator"
+
+# --- MODAL SCREENS ---
+
+
+class InputScreen(ModalScreen):
+    def __init__(self, prompt: str, initial_value: str = ""):
+        super().__init__()
+        self.prompt_text = prompt
+        self.initial_value = initial_value
+
+    def compose(self) -> ComposeResult:
+        yield Grid(
+            Label(self.prompt_text, id="input-label"),
+            Input(self.initial_value, id="input-box"),
+            Horizontal(
+                Button("Cancel", id="btn-cancel"),
+                Button("OK", variant="primary", id="btn-ok"),
+                classes="dialog-buttons"
+            ),
+            id="input-dialog"
+        )
+
+    def on_mount(self):
+        self.query_one(Input).focus()
+
+    @on(Button.Pressed, "#btn-ok")
+    def on_ok(self):
+        val = self.query_one(Input).value
+        self.dismiss(val)
+
+    @on(Button.Pressed, "#btn-cancel")
+    def on_cancel(self):
+        self.dismiss(None)
+
+    @on(Input.Submitted)
+    def on_submit(self):
+        self.on_ok()
+
+
+class OpenMethodScreen(ModalScreen):
+    def compose(self) -> ComposeResult:
+        yield Grid(
+            Label("Open With...", id="om-label"),
+            ListView(
+                ListItem(Label("System Default (xdg-open)"), id="app-default"),
+                ListItem(Label("Neovim (nvim)"), id="app-nvim"),
+                ListItem(Label("Vim (vim)"), id="app-vim"),
+                ListItem(Label("VS Code (code)"), id="app-code"),
+                ListItem(Label("Custom Command..."), id="app-custom"),
+                id="om-list"
+            ),
+            Button("Cancel", id="om-cancel"),
+            id="om-dialog"
+        )
+
+    def on_mount(self):
+        self.query_one(ListView).focus()
+
+    @on(ListView.Selected)
+    def on_select(self, event: ListView.Selected):
+        cid = event.item.id
+        if cid == "app-default":
+            self.dismiss("xdg-open")
+        elif cid == "app-nvim":
+            self.dismiss("nvim")
+        elif cid == "app-vim":
+            self.dismiss("vim")
+        elif cid == "app-code":
+            self.dismiss("code")
+        elif cid == "app-custom":
+            self.dismiss("CUSTOM")
+
+    @on(Button.Pressed, "#om-cancel")
+    def cancel(self):
+        self.dismiss(None)
 
 
 class HelpScreen(ModalScreen):
-    BINDINGS = [
-        Binding("?", "close_help", "Close Help"),
-        Binding("escape", "close_help", "Close Help"),
-    ]
+    BINDINGS = [Binding("?", "close_help", "Close"),
+                Binding("escape", "close_help", "Close")]
 
     def compose(self) -> ComposeResult:
         yield Grid(
             Label("TimeMap Help", id="help-title"),
             Label("Navigation", classes="help-header"),
-            Label("h / l", classes="help-key"), Label("Previous / Next Day",
+            Label("h / l", classes="help-key"), Label("Prev / Next Day",
                                                       classes="help-desc"),
-            Label("k / j", classes="help-key"), Label("Previous / Next Week",
+            Label("k / j", classes="help-key"), Label("Prev / Next Week",
                                                       classes="help-desc"),
             Label("t", classes="help-key"),     Label("Jump to Today",
                                                       classes="help-desc"),
-            Label("p / n", classes="help-key"), Label("Yesterday / Tomorrow",
+            Label("Item Actions", classes="help-header"),
+            Label("o", classes="help-key"),     Label("Open / Open Link",
                                                       classes="help-desc"),
-            Label("Month/Year", classes="help-header"),
-            Label("[ / ]", classes="help-key"), Label("Prev / Next Month",
+            Label("e", classes="help-key"),     Label("Edit Note/Todo",
                                                       classes="help-desc"),
-            Label("{ / }", classes="help-key"), Label("Prev / Next Year",
+            Label("f", classes="help-key"),     Label("Toggle Finish (Todo)",
                                                       classes="help-desc"),
+            Label("r", classes="help-key"),     Label("Remove Item",
+                                                      classes="help-desc"),
+            Label("ctrl+n", classes="help-key"), Label("Rename File Alias",
+                                                       classes="help-desc"),
             Label("General", classes="help-header"),
-            Label("?", classes="help-key"),     Label("Close this help",
+            Label("?", classes="help-key"),     Label("Close Help",
                                                       classes="help-desc"),
             Label("q", classes="help-key"),     Label("Quit", classes="help-desc"),
             Button("Close", variant="primary", id="close-help"),
             id="help-dialog"
         )
 
-    def action_close_help(self):
-        self.dismiss()
+    def action_close_help(self): self.dismiss()
+    def on_button_pressed(self, event): self.dismiss()
 
-    def on_button_pressed(self, event: Button.Pressed) -> None:
-        self.dismiss()
+# --- CUSTOM WIDGETS ---
 
-# --- WIDGETS ---
+
+class DetailItem(ListItem):
+    def __init__(self, item_id, type, content, is_done=False, finish_date=None, alias=None):
+        self.item_id = item_id
+        self.type = type
+        self.content = content
+        self.is_done = is_done
+        self.finish_date = finish_date
+        self.alias = alias
+
+        icon = ""
+        display_text = alias if alias else content
+        should_strike = False
+
+        if type == 'file':
+            icon = "📁"
+            if not alias:
+                display_text = os.path.basename(content)
+        elif type == 'note':
+            icon = "📝"
+            display_text = content
+        elif type == 'todo':
+            display_text = content
+            if is_done:
+                icon = "✅"
+                should_strike = True
+                if finish_date:
+                    try:
+                        dt = date.fromisoformat(finish_date)
+                        display_text += f" [{dt.strftime('%m/%d/%Y')}]"
+                    except ValueError:
+                        pass
+            else:
+                icon = "⬜"
+
+        super().__init__(Label(f"{icon} {display_text}"))
+        if should_strike:
+            self.add_class("todo-done")
+
+
+class HeaderItem(ListItem):
+    def __init__(self, title):
+        super().__init__(Label(title), classes="list-header", disabled=True)
+
+
+class ActionListView(ListView):
+    """Handles key events for the focused list."""
+
+    def on_key(self, event: events.Key):
+        if not isinstance(self.highlighted_child, DetailItem):
+            return
+        item = self.highlighted_child
+        key = event.key
+
+        if key == "r":
+            self.app.action_remove_item(item)
+        elif key == "e":
+            if item.type in ['note', 'todo']:
+                self.app.action_edit_item(item)
+        elif key == "f":
+            if item.type == 'todo':
+                self.app.action_toggle_finish(item)
+        elif key == "ctrl+n":
+            if item.type == 'file':
+                self.app.action_rename_alias(item)
+        elif key == "o":
+            self.app.action_smart_open(item)
+        elif key == "O":  # Shift+o
+            self.app.action_open_custom()
 
 
 class CalendarDay(Button):
@@ -62,12 +229,7 @@ class CalendarDay(Button):
                 self.full_date = date(current_year, current_month, day_num)
             except ValueError:
                 self.full_date = None
-
-            # Add Star if has_items is True
-            label = str(day_num)
-            if has_items:
-                label += " ★"
-
+            label = str(day_num) + (" ★" if has_items else "")
             id_str = f"day-{day_num}"
             disabled_flag = False
         else:
@@ -76,122 +238,51 @@ class CalendarDay(Button):
             id_str = None
             disabled_flag = True
         super().__init__(label, id=id_str, disabled=disabled_flag)
-
-        # Add a class for styling days with items if you want custom colors later
         if has_items:
             self.add_class("has-items")
-
-
-class DetailItem(ListItem):
-    """A list item representing a file, note, or todo."""
-
-    def __init__(self, item_id, type, content, is_done=False, finish_date=None):
-        # 1. Logic for display
-        icon = ""
-
-        # FIX: Show filename only for files, but keep full path in self.content
-        if type == 'file':
-            icon = "📁"
-            display_text = os.path.basename(content)
-        elif type == 'note':
-            icon = "📝"
-            display_text = content
-        elif type == 'todo':
-            display_text = content
-            should_strike = False
-            if is_done:
-                icon = "✅"
-                should_strike = True
-                if finish_date:
-                    try:
-                        dt = date.fromisoformat(finish_date)
-                        fmt_date = dt.strftime("%m/%d/%Y")
-                        display_text += f" [{fmt_date}]"
-                    except ValueError:
-                        pass
-            else:
-                icon = "⬜"
-
-        # 2. Initialize
-        super().__init__(Label(f"{icon} {display_text}"))
-
-        # 3. Set Attributes
-        self.item_id = item_id
-        self.type = type
-        self.content = content
-        self.is_done = is_done
-
-        if type == 'todo' and is_done:
-            self.add_class("todo-done")
-
-
-class HeaderItem(ListItem):
-    """A non-selectable separator header."""
-
-    def __init__(self, title):
-        super().__init__(Label(title), classes="list-header", disabled=True)
 
 
 class TimeMapApp(App):
     CSS = """
     Screen { align: center middle; }
-    
-    /* Layout */
     #calendar-area { width: 60%; height: 100%; }
     #details-panel { width: 40%; height: 100%; border-left: solid $accent; padding: 1; }
-    
-    /* Calendar Header */
     #cal-header { height: 3; width: 100%; align: center middle; margin-bottom: 1; }
     .month-label { width: 20; text-align: center; text-style: bold; padding-top: 1; }
-    .nav-btn { width: 4; }
-    .nav-btn-year { width: 6; }
-
-    /* Grid */
+    .nav-btn { width: 4; } .nav-btn-year { width: 6; }
     #calendar-grid { layout: grid; grid-size: 7 7; width: 100%; height: 100%; margin: 1; }
     .day-header { width: 100%; height: 100%; text-align: center; text-style: bold; color: $accent; padding-top: 1; }
     CalendarDay { width: 100%; height: 100%; }
     .selected-day { background: $primary; color: $text; text-style: bold; }
-    .has-items { color: $accent-lighten-2; } /* Make star days slightly distinctive */
-
-    /* --- ITEM LIST CSS --- */
-    .todo-done {
-        color: $text-muted;
-        text-style: strike;
-    }
+    .has-items { color: $accent-lighten-2; }
+    .todo-done { color: $text-muted; text-style: strike; }
+    .list-header { background: $surface-lighten-1; color: $accent; text-style: bold; height: 1; content-align: center middle; margin: 1 0; }
     
-    .list-header {
-        background: $surface-lighten-1;
-        color: $accent;
-        text-style: bold;
-        height: 1;
-        content-align: center middle;
-        margin-top: 1;
-        margin-bottom: 0;
-    }
-
-    /* --- HELP DIALOG CSS --- */
-    #help-dialog { grid-size: 2; grid-gutter: 1 2; grid-rows: 1fr 3; padding: 0 1; width: 60; height: auto; border: thick $background 80%; background: $surface; }
-    #help-title { column-span: 2; height: 1fr; width: 1fr; content-align: center middle; text-style: bold; border-bottom: solid $primary; margin-bottom: 1; }
-    .help-header { column-span: 2; width: 1fr; content-align: center middle; text-style: bold; color: $accent; margin-top: 1; }
+    #input-dialog, #om-dialog, #help-dialog { width: 60; height: auto; border: thick $background 80%; background: $surface; padding: 1; }
+    #help-dialog { grid-size: 2; grid-gutter: 1 2; }
+    .dialog-buttons { align: center middle; margin-top: 1; height: 3; }
+    #input-label { margin-bottom: 1; }
+    #help-title { column-span: 2; content-align: center middle; text-style: bold; border-bottom: solid $primary; margin-bottom: 1; }
+    .help-header { column-span: 2; content-align: center middle; text-style: bold; color: $accent; margin-top: 1; }
     .help-key { text-align: right; color: $secondary; text-style: bold; }
     .help-desc { text-align: left; }
-    #close-help { column-span: 2; width: 1fr; margin-top: 2; }
+    #close-help { column-span: 2; margin-top: 2; }
     """
 
     BINDINGS = [
-        Binding("h", "move_left", "Prev Day", show=False),
-        Binding("l", "move_right", "Next Day", show=False),
-        Binding("k", "move_up", "Prev Week", show=False),
-        Binding("j", "move_down", "Next Week", show=False),
+        Binding("h", "move_left", "Left", show=False), Binding(
+            "l", "move_right", "Right", show=False),
+        Binding("k", "move_up", "Up", show=False), Binding(
+            "j", "move_down", "Down", show=False),
         Binding("t", "jump_today", "Today", show=False),
-        Binding("p", "jump_prev", "Yesterday", show=False),
-        Binding("n", "jump_next", "Tomorrow", show=False),
-        Binding("[", "prev_month", "-Month", show=False),
-        Binding("]", "next_month", "+Month", show=False),
-        Binding("{", "prev_year", "-Year", show=False),
-        Binding("}", "next_year", "+Year", show=False),
-        Binding("?", "show_help", "Help", show=True),
-        Binding("q", "quit", "Quit", show=True),
+        Binding("p", "jump_prev", "Prev", show=False), Binding(
+            "n", "jump_next", "Next", show=False),
+        Binding("[", "prev_month", "-Month", show=False), Binding("]",
+                                                                  "next_month", "+Month", show=False),
+        Binding("{", "prev_year", "-Year", show=False), Binding("}",
+                                                                "next_year", "+Year", show=False),
+        Binding("?", "show_help", "Help", show=True), Binding(
+            "q", "quit", "Quit", show=True),
     ]
 
     def __init__(self):
@@ -223,36 +314,116 @@ class TimeMapApp(App):
         await self.refresh_calendar()
         self.show_details()
 
-    def action_show_help(self):
-        self.push_screen(HelpScreen())
+    def action_show_help(self): self.push_screen(HelpScreen())
+
+    # --- ITEM LOGIC ---
+
+    def action_remove_item(self, item: DetailItem):
+        db.delete_item(item.item_id)
+        self.show_details()
+        self.run_worker(self.refresh_calendar())
+        self.notify("Item removed")
+
+    def action_edit_item(self, item: DetailItem):
+        def callback(new_val):
+            if new_val and new_val != item.content:
+                db.update_item_content(item.item_id, new_val)
+                self.show_details()
+                self.notify("Updated")
+        self.push_screen(InputScreen(
+            f"Edit {item.type}:", item.content), callback)
+
+    def action_rename_alias(self, item: DetailItem):
+        current_val = item.alias if item.alias else os.path.basename(
+            item.content)
+
+        def callback(new_val):
+            if new_val:
+                db.update_item_alias(item.item_id, new_val)
+                self.show_details()
+                self.notify("Alias updated")
+        self.push_screen(InputScreen("Rename (Alias):", current_val), callback)
+
+    def action_toggle_finish(self, item: DetailItem):
+        date_str = self.current_date_obj.isoformat()
+        db.toggle_todo_status(item.item_id, date_str)
+        status = "Done" if not item.is_done else "Undone"
+        self.notify(f"Todo {status}")
+        self.show_details()
+        self.run_worker(self.refresh_calendar())
+
+    def action_smart_open(self, item: DetailItem):
+        if item.type == 'file':
+            cmd = config.get_open_command(item.content)
+            self.open_file(item.content, cmd)
+        elif item.type == 'todo':
+            match = re.search(r'\[.*?\]\((.*?)\)', item.content)
+            if match:
+                link = match.group(1)
+                open_url(link)
+                self.notify(f"Opening link: {link}")
+            else:
+                self.notify("No link found in todo")
+
+    def action_open_custom(self):
+        try:
+            list_view = self.query_one("ActionListView", ActionListView)
+            if list_view.has_focus and isinstance(list_view.highlighted_child, DetailItem):
+                item = list_view.highlighted_child
+                if item and item.type == 'file':
+                    def callback(method):
+                        if method == "CUSTOM":
+                            self.push_screen(InputScreen("Enter command:"), lambda cmd: self.open_file(
+                                item.content, cmd) if cmd else None)
+                        elif method:
+                            self.open_file(item.content, method)
+                    self.push_screen(OpenMethodScreen(), callback)
+        except Exception:
+            pass
+
+    def open_file(self, path, command):
+        if not os.path.exists(path):
+            self.notify("File missing", severity="error")
+            return
+
+        cmd_list = [command, path]
+        term_apps = ['nvim', 'vim', 'vi', 'nano', 'htop', 'less', 'top']
+        cmd_name = os.path.basename(command)
+
+        if cmd_name in term_apps:
+            term = get_terminal_cmd()
+            cmd_list = [term, "-e", command, path]
+            self.notify(f"Launching in {term}...")
+        else:
+            self.notify(f"Opened with {command}")
+
+        try:
+            subprocess.Popen(cmd_list, start_new_session=True,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except FileNotFoundError:
+            self.notify(f"Command '{command}' not found", severity="error")
+
+    # --- REFRESH LOGIC ---
 
     async def refresh_calendar(self):
         month_name = calendar.month_name[self.display_month]
-        label = self.query_one("#month-label", Label)
-        label.update(f"{month_name} {self.display_year}")
+        self.query_one(
+            "#month-label", Label).update(f"{month_name} {self.display_year}")
         grid = self.query_one("#calendar-grid", Grid)
         await grid.remove_children()
-
-        for day_name in calendar.day_abbr:
-            grid.mount(Label(day_name, classes="day-header"))
+        for d in calendar.day_abbr:
+            grid.mount(Label(d, classes="day-header"))
 
         cal = calendar.monthcalendar(self.display_year, self.display_month)
-
-        # FIX: Get marked days for stars
         marked_days = db.get_marked_days(self.display_year, self.display_month)
 
         day_to_focus = None
         for week in cal:
             for day in week:
-                # Pass has_items=True if day is in marked_days
-                has_items = (day in marked_days)
-
                 btn = CalendarDay(day, self.display_year,
-                                  self.display_month, has_items)
-
+                                  self.display_month, (day in marked_days))
                 if day != 0:
-                    btn_date = date(self.display_year, self.display_month, day)
-                    if btn_date == self.current_date_obj:
+                    if date(self.display_year, self.display_month, day) == self.current_date_obj:
                         btn.add_class("selected-day")
                         day_to_focus = btn
                 grid.mount(btn)
@@ -263,7 +434,6 @@ class TimeMapApp(App):
         target_date_str = self.current_date_obj.isoformat()
         panel = self.query_one("#details-panel")
         panel.remove_children()
-
         panel.mount(Label(f"Items for {target_date_str}:"))
 
         try:
@@ -273,35 +443,28 @@ class TimeMapApp(App):
 
         date_items = [i for i in items if i[1] != 'todo']
         todo_items = [i for i in items if i[1] == 'todo']
-
         todo_items.sort(key=lambda x: x[3])
 
-        widgets_to_show = []
-
-        if date_items:
-            for item in date_items:
-                widgets_to_show.append(DetailItem(
-                    item[0], item[1], item[2], item[3], item[4]))
-
+        widgets = []
+        for i in date_items:
+            widgets.append(DetailItem(i[0], i[1], i[2], i[3], i[4], i[5]))
         if todo_items:
-            widgets_to_show.append(HeaderItem("── To Do List ──"))
-            for item in todo_items:
-                widgets_to_show.append(DetailItem(
-                    item[0], item[1], item[2], item[3], item[4]))
+            widgets.append(HeaderItem("── To Do List ──"))
+            for i in todo_items:
+                widgets.append(DetailItem(i[0], i[1], i[2], i[3], i[4], i[5]))
 
-        if not widgets_to_show:
+        if not widgets:
             panel.mount(Label("No items found."))
         else:
-            list_view = ListView(*widgets_to_show)
+            list_view = ActionListView(*widgets)
             panel.mount(list_view)
 
-    # --- ACTIONS & HANDLERS ---
+    # --- NAVIGATION ---
 
     async def change_selected_date(self, new_date: date):
         self.current_date_obj = new_date
         if (new_date.year != self.display_year) or (new_date.month != self.display_month):
-            self.display_year = new_date.year
-            self.display_month = new_date.month
+            self.display_year, self.display_month = new_date.year, new_date.month
             await self.refresh_calendar()
         else:
             await self.refresh_calendar()
@@ -375,30 +538,7 @@ class TimeMapApp(App):
 
     @on(ListView.Selected)
     def on_item_click(self, event: ListView.Selected):
-        if isinstance(event.item, DetailItem):
-            item = event.item
-            if item.type == 'file':
-                if os.path.exists(item.content):
-                    subprocess.Popen(['xdg-open', item.content], start_new_session=True,
-                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                    self.notify(f"Opening {item.content}")
-                else:
-                    self.notify("File not found!", severity="error")
-            elif item.type == 'todo':
-                # Pass current selected date so DB knows when it was finished!
-                current_date_str = self.current_date_obj.isoformat()
-                db.toggle_todo_status(item.item_id, current_date_str)
-
-                status = "Done" if not item.is_done else "Undone"
-                self.notify(f"Todo marked {status}")
-                self.show_details()
-
-                # REFRESH CALENDAR because stars might have changed
-                # (e.g. if we finished the last todo on a specific day)
-                self.run_worker(self.refresh_calendar())
-
-            elif item.type == 'note':
-                self.notify(item.content, title="Note", timeout=5)
+        pass
 
 
 def run_tui():

@@ -1,7 +1,7 @@
 import typer
 import sys
 import os
-from . import db, tui
+from . import db, tui, config
 
 app = typer.Typer()
 
@@ -23,14 +23,21 @@ def addnote(content: str, date: str = typer.Option(None, help="YYYY-MM-DD")):
 
 @app.command()
 def add2do(content: str):
-    """Add a todo item (remains until checked off)."""
+    """Add a todo item."""
     db.add_item("todo", content)
     print("Added todo item.")
 
 
 @app.callback(invoke_without_command=True)
-def main(ctx: typer.Context):
-    # If no subcommand (add/addnote/etc) is run, launch the TUI
+def main(ctx: typer.Context,
+         config_flag: bool = typer.Option(
+             False, "--config", help="Edit configuration"),
+         default_flag: bool = typer.Option(False, "--default", help="Edit defaults")):
+
+    if config_flag and default_flag:
+        config.edit_config()
+        return
+
     if ctx.invoked_subcommand is None:
         tui.run_tui()
 

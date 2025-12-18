@@ -14,15 +14,17 @@ def get_db():
 
     c.execute('''CREATE TABLE IF NOT EXISTS items
                  (id INTEGER PRIMARY KEY, date TEXT, type TEXT, content TEXT, 
-                  is_done INTEGER DEFAULT 0, finish_date TEXT)''')
+                  is_done INTEGER DEFAULT 0, finish_date TEXT, alias TEXT)''')
 
-    # MIGRATION: Ensure columns exist
+    # MIGRATIONS
     c.execute("PRAGMA table_info(items)")
     columns = [info[1] for info in c.fetchall()]
     if 'is_done' not in columns:
         c.execute("ALTER TABLE items ADD COLUMN is_done INTEGER DEFAULT 0")
     if 'finish_date' not in columns:
         c.execute("ALTER TABLE items ADD COLUMN finish_date TEXT")
+    if 'alias' not in columns:
+        c.execute("ALTER TABLE items ADD COLUMN alias TEXT")
 
     conn.commit()
     return conn
@@ -32,7 +34,7 @@ def add_item(item_type: str, content: str, target_date: str = None):
     if target_date is None:
         target_date = date.today().isoformat()
     conn = get_db()
-    conn.execute("INSERT INTO items (date, type, content, is_done, finish_date) VALUES (?, ?, ?, 0, NULL)",
+    conn.execute("INSERT INTO items (date, type, content, is_done, finish_date, alias) VALUES (?, ?, ?, 0, NULL, NULL)",
                  (target_date, item_type, content))
     conn.commit()
     conn.close()
@@ -42,13 +44,14 @@ def get_items_for_date(target_date: str) -> List[Tuple]:
     conn = get_db()
     c = conn.cursor()
 
-    # 1. Non-todo items
-    c.execute("SELECT id, type, content, is_done, finish_date FROM items WHERE date = ? AND type != 'todo'", (target_date,))
+    # SELECT now includes 'alias' at index 5
+    # 1. Non-todos
+    c.execute("SELECT id, type, content, is_done, finish_date, alias FROM items WHERE date = ? AND type != 'todo'", (target_date,))
     items = c.fetchall()
 
-    # 2. Todo items
+    # 2. Todos
     c.execute("""
-        SELECT id, type, content, is_done, finish_date FROM items 
+        SELECT id, type, content, is_done, finish_date, alias FROM items 
         WHERE type = 'todo' 
           AND date <= ? 
           AND (is_done = 0 OR finish_date >= ?)
@@ -75,28 +78,43 @@ def toggle_todo_status(item_id: int, action_date: str):
     conn.close()
 
 
+def delete_item(item_id: int):
+    conn = get_db()
+    conn.execute("DELETE FROM items WHERE id = ?", (item_id,))
+    conn.commit()
+    conn.close()
+
+
+def update_item_content(item_id: int, new_content: str):
+    conn = get_db()
+    conn.execute("UPDATE items SET content = ? WHERE id = ?",
+                 (new_content, item_id))
+    conn.commit()
+    conn.close()
+
+
+def update_item_alias(item_id: int, new_alias: str):
+    conn = get_db()
+    conn.execute("UPDATE items SET alias = ? WHERE id = ?",
+                 (new_alias, item_id))
+    conn.commit()
+    conn.close()
+
+
 def get_marked_days(year: int, month: int) -> Set[int]:
-    """
-    Returns a set of day numbers (1-31) in the specified month that contain items.
-    """
     conn = get_db()
     c = conn.cursor()
     marked_days = set()
 
-    # 1. Files/Notes in this specific month
-    # SQLite LIKE '2023-12-%'
     search_pattern = f"{year}-{month:02d}-%"
     c.execute(
         "SELECT date FROM items WHERE type != 'todo' AND date LIKE ?", (search_pattern,))
     for row in c.fetchall():
         try:
-            d = date.fromisoformat(row[0])
-            marked_days.add(d.day)
+            marked_days.add(date.fromisoformat(row[0]).day)
         except ValueError:
             pass
 
-    # 2. Todos active in this month
-    # Calculate month bounds
     _, last_day = calendar.monthrange(year, month)
     month_start = date(year, month, 1)
     month_end = date(year, month, last_day)
@@ -107,37 +125,22 @@ def get_marked_days(year: int, month: int) -> Set[int]:
     for create_str, finish_str, is_done in todos:
         try:
             create_date = date.fromisoformat(create_str)
-
-            # Optimization: If created after this month, skip
             if create_date > month_end:
                 continue
-
-            # Determine effective finish date (if any)
-            finish_date = None
-            if is_done and finish_str:
-                finish_date = date.fromisoformat(finish_str)
-
-            # Optimization: If finished before this month started, skip
+            finish_date = date.fromisoformat(finish_str) if (
+                is_done and finish_str) else None
             if finish_date and finish_date < month_start:
                 continue
 
-            # Calculate overlap
-            start_marker = max(create_date, month_start)
+            start = max(create_date, month_start)
+            end = min(finish_date, month_end) if finish_date else month_end
 
-            if finish_date:
-                end_marker = min(finish_date, month_end)
-            else:
-                end_marker = month_end
-
-            # Mark the days
-            if start_marker <= end_marker:
-                curr = start_marker
-                while curr <= end_marker:
+            if start <= end:
+                curr = start
+                while curr <= end:
                     marked_days.add(curr.day)
                     curr += timedelta(days=1)
-
         except ValueError:
             continue
-
     conn.close()
     return marked_days
