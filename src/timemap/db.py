@@ -12,7 +12,6 @@ def get_db():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
 
-    # Added 'mood' column
     c.execute('''CREATE TABLE IF NOT EXISTS items
                  (id INTEGER PRIMARY KEY, date TEXT, type TEXT, content TEXT, 
                   is_done INTEGER DEFAULT 0, finish_date TEXT, alias TEXT, mood TEXT)''')
@@ -47,11 +46,9 @@ def get_items_for_date(target_date: str) -> List[Tuple]:
     conn = get_db()
     c = conn.cursor()
 
-    # 1. Non-todos (Files, Notes, Diaries)
     c.execute("SELECT id, type, content, is_done, finish_date, alias, mood FROM items WHERE date = ? AND type != 'todo'", (target_date,))
     items = c.fetchall()
 
-    # 2. Todos
     c.execute("""
         SELECT id, type, content, is_done, finish_date, alias, mood FROM items 
         WHERE type = 'todo' 
@@ -99,6 +96,16 @@ def update_item_alias(item_id: int, new_alias: str):
     conn = get_db()
     conn.execute("UPDATE items SET alias = ? WHERE id = ?",
                  (new_alias, item_id))
+    conn.commit()
+    conn.close()
+
+# --- NEW FUNCTION ---
+
+
+def update_diary_item(item_id: int, title: str, mood: str, content: str):
+    conn = get_db()
+    conn.execute("UPDATE items SET alias = ?, mood = ?, content = ? WHERE id = ?",
+                 (title, mood, content, item_id))
     conn.commit()
     conn.close()
 

@@ -1,11 +1,11 @@
 from textual.app import App, ComposeResult
 from textual.containers import Grid, Vertical, Horizontal, Container, ScrollableContainer
-from textual.widgets import Header, Footer, Button, Label, ListView, ListItem, Input
+from textual.widgets import Header, Footer, Button, Label, ListView, ListItem, Input, TextArea
 from textual.screen import ModalScreen
 from textual.binding import Binding
 from textual import on, events
 import calendar
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 import subprocess
 import os
 import re
@@ -38,6 +38,58 @@ def get_terminal_cmd():
 # --- MODAL SCREENS ---
 
 
+class DiaryEditScreen(ModalScreen):
+    """A better looking screen to edit Title, Mood, and multi-line Content."""
+
+    def __init__(self, title: str, mood: str, content: str):
+        super().__init__()
+        self.initial_title = title
+        self.initial_mood = mood or ""
+        self.initial_content = content
+
+    def compose(self) -> ComposeResult:
+        yield Container(
+            Label("Edit Diary Entry", id="edit-header"),
+
+            # Title Section
+            Label("Title", classes="field-label"),
+            Input(self.initial_title, id="input-title",
+                  placeholder="Entry Title"),
+
+            # Mood Section
+            Label("Mood", classes="field-label"),
+            Input(self.initial_mood, id="input-mood",
+                  placeholder="How are you feeling?"),
+
+            # Content Section (TextArea for multi-line)
+            Label("Content", classes="field-label"),
+            TextArea(self.initial_content, id="input-content", language=None),
+
+            # Buttons
+            Horizontal(
+                Button("Cancel", id="btn-cancel"),
+                Button("Save", variant="primary", id="btn-save"),
+                classes="dialog-buttons"
+            ),
+            id="diary-edit-dialog"
+        )
+
+    def on_mount(self):
+        self.query_one("#input-title").focus()
+
+    @on(Button.Pressed, "#btn-save")
+    def on_save(self):
+        title = self.query_one("#input-title", Input).value
+        mood = self.query_one("#input-mood", Input).value
+        # TextArea uses .text, not .value
+        content = self.query_one("#input-content", TextArea).text
+        self.dismiss({"title": title, "mood": mood, "content": content})
+
+    @on(Button.Pressed, "#btn-cancel")
+    def on_cancel(self):
+        self.dismiss(None)
+
+
 class TextDetailScreen(ModalScreen):
     """Screen to view full details of a Note or Diary."""
 
@@ -48,9 +100,10 @@ class TextDetailScreen(ModalScreen):
         self.meta_info = meta_info
 
     def compose(self) -> ComposeResult:
-        yield Grid(
+        yield Container(
             Label(self.item_title, id="detail-title"),
             Label(self.meta_info, id="detail-meta") if self.meta_info else Label(""),
+            # Scrollable container for long text
             ScrollableContainer(
                 Label(self.item_content, id="detail-content"),
                 id="detail-scroll"
@@ -299,13 +352,32 @@ class TimeMapApp(App):
     .todo-done { color: $text-muted; text-style: strike; }
     .list-header { background: $surface-lighten-1; color: $accent; text-style: bold; height: 1; content-align: center middle; margin: 1 0; }
     
-    #input-dialog, #om-dialog, #help-dialog, #detail-dialog { 
+    #input-dialog, #om-dialog, #help-dialog { 
         width: 60; height: auto; border: thick $background 80%; background: $surface; padding: 1; 
     }
-    #detail-dialog { height: 80%; width: 70%; }
-    #detail-scroll { height: 1fr; border: solid $secondary; padding: 1; margin: 1 0; }
-    #detail-title { text-style: bold; content-align: center middle; width: 100%; border-bottom: solid $primary; }
-    #detail-meta { color: $secondary; content-align: center middle; width: 100%; margin-bottom: 1; }
+    
+    /* Diary Edit & Detail Screens */
+    #diary-edit-dialog, #detail-dialog {
+        width: 70%; 
+        height: 80%;
+        border: thick $background 80%; 
+        background: $surface; 
+        padding: 1 2;
+    }
+    
+    #edit-header { text-style: bold; border-bottom: solid $primary; width: 100%; content-align: center middle; margin-bottom: 1; }
+    .field-label { margin-top: 1; color: $accent; text-style: bold; }
+    
+    #input-content { 
+        height: 1fr; 
+        border: solid $secondary;
+        margin-top: 1;
+    }
+    
+    #detail-scroll { height: 1fr; border: solid $secondary; padding: 1; margin: 1 0; background: $surface-lighten-1; }
+    #detail-content { width: 100%; height: auto; }
+    #detail-title { text-style: bold; content-align: center middle; width: 100%; border-bottom: solid $primary; padding-bottom: 1; }
+    #detail-meta { color: $secondary; content-align: center middle; width: 100%; margin-top: 1; margin-bottom: 1; }
     
     #help-dialog { grid-size: 2; grid-gutter: 1 2; }
     .dialog-buttons { align: center middle; margin-top: 1; height: 3; }
@@ -448,13 +520,25 @@ class TimeMapApp(App):
         self.notify("Item removed")
 
     def action_edit_item(self, item):
-        def callback(new_val):
-            if new_val and new_val != item.content:
-                db.update_item_content(item.item_id, new_val)
-                self.show_details()
-                self.notify("Updated")
-        self.push_screen(InputScreen(
-            f"Edit {item.type}:", item.content), callback)
+        if item.type == 'diary':
+            def callback(result):
+                if result:
+                    db.update_diary_item(
+                        item.item_id, result['title'], result['mood'], result['content'])
+                    self.show_details()
+                    self.notify("Diary updated")
+
+            current_title = item.alias if item.alias else "Diary"
+            self.push_screen(DiaryEditScreen(
+                current_title, item.mood, item.content), callback)
+        else:
+            def callback(new_val):
+                if new_val and new_val != item.content:
+                    db.update_item_content(item.item_id, new_val)
+                    self.show_details()
+                    self.notify("Updated")
+            self.push_screen(InputScreen(
+                f"Edit {item.type}:", item.content), callback)
 
     def action_rename_alias(self, item):
         current_val = item.alias if item.alias else os.path.basename(
