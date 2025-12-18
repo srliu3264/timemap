@@ -111,7 +111,6 @@ class HelpScreen(ModalScreen):
                 "Switch Focus (List/Cal)", classes="help-desc"),
             Label("q", classes="help-key"),       Label("Quit",
                                                         classes="help-desc"),
-
             Label("Calendar Mode", classes="help-header"),
             Label("h j k l", classes="help-key"), Label("Navigate Date",
                                                         classes="help-desc"),
@@ -119,19 +118,17 @@ class HelpScreen(ModalScreen):
                                                          classes="help-desc"),
             Label("date + G", classes="help-key"), Label("Go to Date (mm-dd-yyyy)",
                                                          classes="help-desc"),
-
             Label("List Mode", classes="help-header"),
             Label("j / k", classes="help-key"),   Label("Navigate Items",
                                                         classes="help-desc"),
             Label("o", classes="help-key"),       Label("Open / Open Link",
                                                         classes="help-desc"),
-            Label("O (shift+o)", classes="help-key"), Label("Open With...",
-                                                            classes="help-desc"),
+            Label("O", classes="help-key"),       Label("Open With...",
+                                                        classes="help-desc"),
             Label("r / e", classes="help-key"),   Label("Remove / Edit",
                                                         classes="help-desc"),
             Label("n", classes="help-key"),       Label("Rename Alias",
                                                         classes="help-desc"),
-
             Button("Close", variant="primary", id="close-help"),
             id="help-dialog"
         )
@@ -195,7 +192,6 @@ class ActionListView(ListView):
         Binding("r", "remove_item", "Remove"),
         Binding("e", "edit_item", "Edit"),
         Binding("f", "toggle_finish", "Toggle Finish"),
-        # Navigation overrides for List Mode
         Binding("j", "cursor_down", "Down", show=False),
         Binding("k", "cursor_up", "Up", show=False),
         Binding("h", "unfocus_list", "Back to Cal", show=False),
@@ -259,8 +255,19 @@ class CalendarDay(Button):
 class TimeMapApp(App):
     CSS = """
     Screen { align: center middle; }
+    
+    /* MAIN CONTAINER - Vertical Layout */
+    #main-container { width: 100%; height: 1fr; layout: vertical; }
+    
+    /* Top Content (Header + Calendar + Details) */
+    #content-area { width: 100%; height: 1fr; layout: horizontal; }
+    
     #calendar-area { width: 60%; height: 100%; }
     #details-panel { width: 40%; height: 100%; border-left: solid $accent; padding: 1; }
+    
+    /* Status Bar at Bottom of Content Area */
+    #status-bar { width: 100%; height: 1; background: $accent; color: $text; padding-left: 1; text-style: bold; }
+    
     #cal-header { height: 3; width: 100%; align: center middle; margin-bottom: 1; }
     .month-label { width: 20; text-align: center; text-style: bold; padding-top: 1; }
     .nav-btn { width: 4; } .nav-btn-year { width: 6; }
@@ -271,8 +278,6 @@ class TimeMapApp(App):
     CalendarDay:focus { background: $accent; color: $text; }
     .selected-day { background: $primary; color: $text; text-style: bold; }
     .has-items { color: $accent-lighten-2; }
-    
-    #status-bar { width: 100%; height: 1; background: $surface; color: $text; dock: bottom; padding-left: 1; }
     
     .todo-done { color: $text-muted; text-style: strike; }
     .list-header { background: $surface-lighten-1; color: $accent; text-style: bold; height: 1; content-align: center middle; margin: 1 0; }
@@ -289,30 +294,24 @@ class TimeMapApp(App):
     """
 
     BINDINGS = [
-        # GLOBAL BINDINGS
         Binding("q", "quit", "Quit"),
         Binding("?", "show_help", "Help"),
-
-        # CALENDAR NAVIGATION (App level - active when Grid is focused)
+        # Cal Nav
         Binding("h", "move_left", "Left", show=False),
         Binding("l", "move_right", "Right", show=False),
         Binding("k", "move_up", "Up", show=False),
         Binding("j", "move_down", "Down", show=False),
-
         Binding("t", "jump_today", "Today", show=False),
         Binding("p", "jump_prev", "Prev Day", show=False),
         Binding("n", "jump_next", "Next Day", show=False),
-
         Binding("[", "prev_month", "-Month", show=False),
         Binding("]", "next_month", "+Month", show=False),
         Binding("{", "prev_year", "-Year", show=False),
         Binding("}", "next_year", "+Year", show=False),
-
-        # Focus Switching
+        # Focus
         Binding("v", "focus_list", "Focus List"),
         Binding("enter", "focus_list", "Focus List"),
-
-        # Shortcuts for Jumping
+        # Commands
         Binding("g", "go_day", "Go Day", show=False),
         Binding("G", "go_date", "Go Date", show=False),
     ]
@@ -326,44 +325,54 @@ class TimeMapApp(App):
 
     def compose(self) -> ComposeResult:
         yield Header()
-        yield Horizontal(
-            Vertical(
-                Horizontal(
-                    Button("<<", id="btn-prev-year", classes="nav-btn-year"),
-                    Button("<", id="btn-prev-month", classes="nav-btn"),
-                    Label("", id="month-label", classes="month-label"),
-                    Button(">", id="btn-next-month", classes="nav-btn"),
-                    Button(">>", id="btn-next-year", classes="nav-btn-year"),
-                    id="cal-header"
+        # Main Container to stack content area and status bar vertically
+        yield Container(
+            Container(
+                Vertical(
+                    Horizontal(
+                        Button("<<", id="btn-prev-year",
+                               classes="nav-btn-year"),
+                        Button("<", id="btn-prev-month", classes="nav-btn"),
+                        Label("", id="month-label", classes="month-label"),
+                        Button(">", id="btn-next-month", classes="nav-btn"),
+                        Button(">>", id="btn-next-year",
+                               classes="nav-btn-year"),
+                        id="cal-header"
+                    ),
+                    Container(Grid(id="calendar-grid"), id="grid-container"),
+                    id="calendar-area"
                 ),
-                Container(Grid(id="calendar-grid"), id="grid-container"),
-                id="calendar-area"
+                Vertical(Label("Select a date..."), id="details-panel"),
+                id="content-area"
             ),
-            Vertical(Label("Select a date..."), id="details-panel")
+            Label("Ready.", id="status-bar"),
+            id="main-container"
         )
-        yield Label("", id="status-bar")
         yield Footer()
 
     async def on_mount(self):
         await self.refresh_calendar()
         self.show_details()
 
-    # --- KEY HANDLING FOR BUFFER ---
     def on_key(self, event: events.Key):
-        # Capture numbers and dashes for command buffer
         if event.character and event.character in "0123456789-":
             self.cmd_buffer += event.character
             self.update_status(f"Cmd: {self.cmd_buffer}")
         elif event.key == "escape":
             self.cmd_buffer = ""
-            self.update_status("")
-            # Also reset focus to calendar if in list
+            self.update_status("Ready.")
             self.action_focus_calendar()
+        elif event.key == "backspace":
+            self.cmd_buffer = self.cmd_buffer[:-1]
+            if self.cmd_buffer:
+                self.update_status(f"Cmd: {self.cmd_buffer}")
+            else:
+                self.update_status("Ready.")
 
     def update_status(self, msg):
         self.query_one("#status-bar", Label).update(msg)
 
-    # --- ACTIONS: JUMPING ---
+    # --- ACTIONS: ASYNC COMMANDS ---
     async def action_go_day(self):
         if self.cmd_buffer.isdigit():
             day = int(self.cmd_buffer)
@@ -377,13 +386,12 @@ class TimeMapApp(App):
                 self.cmd_buffer = ""
         else:
             self.cmd_buffer = ""
-            self.update_status("")
+            self.update_status("Ready.")
 
     async def action_go_date(self):
         if re.match(r"\d{1,2}-\d{1,2}-\d{4}", self.cmd_buffer):
             try:
                 parts = self.cmd_buffer.split('-')
-                # Format: MM-DD-YYYY
                 new_date = date(int(parts[2]), int(parts[0]), int(parts[1]))
                 self.cmd_buffer = ""
                 self.update_status(f"Jumped to {new_date}")
@@ -400,7 +408,7 @@ class TimeMapApp(App):
         try:
             list_view = self.query_one("ActionListView", ActionListView)
             list_view.focus()
-            self.update_status("List Focused")
+            self.update_status("List Focused (j/k to move)")
         except Exception:
             self.notify("List is empty or not available")
 
@@ -412,7 +420,7 @@ class TimeMapApp(App):
                 self.update_status("Calendar Focused")
                 break
 
-    # --- ACTIONS: ITEM LOGIC (Proxied from ActionListView) ---
+    # --- ACTIONS: ITEM LOGIC ---
     def action_remove_item(self, item):
         db.delete_item(item.item_id)
         self.show_details()
@@ -442,6 +450,8 @@ class TimeMapApp(App):
     def action_toggle_finish(self, item):
         date_str = self.current_date_obj.isoformat()
         db.toggle_todo_status(item.item_id, date_str)
+        status = "Done" if not item.is_done else "Undone"
+        self.notify(f"Todo {status}")
         self.show_details()
         self.run_worker(self.refresh_calendar())
 
@@ -489,10 +499,8 @@ class TimeMapApp(App):
         except FileNotFoundError:
             self.notify(f"Command '{command}' not found", severity="error")
 
-    # --- ACTIONS: MODALS ---
     def action_show_help(self): self.push_screen(HelpScreen())
 
-    # --- REFRESH LOGIC ---
     async def refresh_calendar(self):
         month_name = calendar.month_name[self.display_month]
         self.query_one(
@@ -516,7 +524,6 @@ class TimeMapApp(App):
                         day_to_focus = btn
                 grid.mount(btn)
 
-        # Restore focus to calendar if appropriate
         try:
             if not self.query_one("ActionListView").has_focus and day_to_focus:
                 day_to_focus.focus()
@@ -552,7 +559,7 @@ class TimeMapApp(App):
             list_view = ActionListView(*widgets)
             panel.mount(list_view)
 
-    # --- NAVIGATION ---
+    # --- NAVIGATION ACTIONS (MUST BE ASYNC) ---
     async def change_selected_date(self, new_date: date):
         self.current_date_obj = new_date
         if (new_date.year != self.display_year) or (new_date.month != self.display_month):
@@ -583,7 +590,6 @@ class TimeMapApp(App):
     async def action_jump_next(self):
         await self.change_selected_date(self.current_date_obj + timedelta(days=1))
 
-    # --- ASYNC HEADER NAV ---
     async def action_prev_month(self):
         if self.display_month == 1:
             self.display_month = 12
