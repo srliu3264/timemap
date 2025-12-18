@@ -1,12 +1,11 @@
 from textual.app import App, ComposeResult
-from textual.containers import Grid, Vertical, Horizontal, Container
+from textual.containers import Grid, Vertical, Horizontal, Container, ScrollableContainer
 from textual.widgets import Header, Footer, Button, Label, ListView, ListItem, Input
 from textual.screen import ModalScreen
 from textual.binding import Binding
 from textual import on, events
-from textual.message import Message
 import calendar
-from datetime import date, timedelta, datetime
+from datetime import date, timedelta
 import subprocess
 import os
 import re
@@ -37,6 +36,31 @@ def get_terminal_cmd():
     return "x-terminal-emulator"
 
 # --- MODAL SCREENS ---
+
+
+class TextDetailScreen(ModalScreen):
+    """Screen to view full details of a Note or Diary."""
+
+    def __init__(self, title: str, content: str, meta_info: str = ""):
+        super().__init__()
+        self.item_title = title
+        self.item_content = content
+        self.meta_info = meta_info
+
+    def compose(self) -> ComposeResult:
+        yield Grid(
+            Label(self.item_title, id="detail-title"),
+            Label(self.meta_info, id="detail-meta") if self.meta_info else Label(""),
+            ScrollableContainer(
+                Label(self.item_content, id="detail-content"),
+                id="detail-scroll"
+            ),
+            Button("Close", variant="primary", id="btn-close"),
+            id="detail-dialog"
+        )
+
+    @on(Button.Pressed, "#btn-close")
+    def on_close(self): self.dismiss()
 
 
 class InputScreen(ModalScreen):
@@ -107,8 +131,8 @@ class HelpScreen(ModalScreen):
         yield Grid(
             Label("TimeMap Help", id="help-title"),
             Label("Global", classes="help-header"),
-            Label("v / Enter", classes="help-key"), Label(
-                "Switch Focus (List/Cal)", classes="help-desc"),
+            Label("v / Enter", classes="help-key"), Label("Switch Focus",
+                                                          classes="help-desc"),
             Label("q", classes="help-key"),       Label("Quit",
                                                         classes="help-desc"),
             Label("Calendar Mode", classes="help-header"),
@@ -116,12 +140,12 @@ class HelpScreen(ModalScreen):
                                                         classes="help-desc"),
             Label("1-31 + g", classes="help-key"), Label("Go to Day",
                                                          classes="help-desc"),
-            Label("date + G", classes="help-key"), Label("Go to Date (mm-dd-yyyy)",
+            Label("date + G", classes="help-key"), Label("Go to Date",
                                                          classes="help-desc"),
             Label("List Mode", classes="help-header"),
             Label("j / k", classes="help-key"),   Label("Navigate Items",
                                                         classes="help-desc"),
-            Label("o", classes="help-key"),       Label("Open / Open Link",
+            Label("o", classes="help-key"),       Label("Open / Details",
                                                         classes="help-desc"),
             Label("O", classes="help-key"),       Label("Open With...",
                                                         classes="help-desc"),
@@ -140,13 +164,15 @@ class HelpScreen(ModalScreen):
 
 
 class DetailItem(ListItem):
-    def __init__(self, item_id, type, content, is_done=False, finish_date=None, alias=None):
+    def __init__(self, item_id, type, content, is_done=False, finish_date=None, alias=None, mood=None, date_str=None):
         self.item_id = item_id
         self.type = type
         self.content = content
         self.is_done = is_done
         self.finish_date = finish_date
         self.alias = alias
+        self.mood = mood
+        self.date_str = date_str
 
         icon = ""
         display_text = alias if alias else content
@@ -159,6 +185,10 @@ class DetailItem(ListItem):
         elif type == 'note':
             icon = "📝"
             display_text = content
+        elif type == 'diary':
+            icon = "📔"
+            if not alias:
+                display_text = f"{date_str} Diary"
         elif type == 'todo':
             display_text = content
             if is_done:
@@ -184,7 +214,6 @@ class HeaderItem(ListItem):
 
 
 class ActionListView(ListView):
-    """ListView with bindings that ONLY apply when focused."""
     BINDINGS = [
         Binding("o", "open_default", "Open"),
         Binding("O", "open_custom", "Open With"),
@@ -199,16 +228,14 @@ class ActionListView(ListView):
         Binding("escape", "unfocus_list", "Back to Cal", show=False),
     ]
 
-    def action_unfocus_list(self):
-        self.app.action_focus_calendar()
+    def action_unfocus_list(self): self.app.action_focus_calendar()
 
     def action_open_default(self):
         item = self.highlighted_child
         if isinstance(item, DetailItem):
             self.app.action_smart_open(item)
 
-    def action_open_custom(self):
-        self.app.action_open_custom()
+    def action_open_custom(self): self.app.action_open_custom()
 
     def action_rename_item(self):
         item = self.highlighted_child
@@ -222,7 +249,7 @@ class ActionListView(ListView):
 
     def action_edit_item(self):
         item = self.highlighted_child
-        if isinstance(item, DetailItem) and item.type in ['note', 'todo']:
+        if isinstance(item, DetailItem) and item.type in ['note', 'todo', 'diary']:
             self.app.action_edit_item(item)
 
     def action_toggle_finish(self):
@@ -255,34 +282,31 @@ class CalendarDay(Button):
 class TimeMapApp(App):
     CSS = """
     Screen { align: center middle; }
-    
-    /* MAIN CONTAINER - Vertical Layout */
     #main-container { width: 100%; height: 1fr; layout: vertical; }
-    
-    /* Top Content (Header + Calendar + Details) */
     #content-area { width: 100%; height: 1fr; layout: horizontal; }
-    
     #calendar-area { width: 60%; height: 100%; }
     #details-panel { width: 40%; height: 100%; border-left: solid $accent; padding: 1; }
-    
-    /* Status Bar at Bottom of Content Area */
     #status-bar { width: 100%; height: 1; background: $accent; color: $text; padding-left: 1; text-style: bold; }
-    
     #cal-header { height: 3; width: 100%; align: center middle; margin-bottom: 1; }
     .month-label { width: 20; text-align: center; text-style: bold; padding-top: 1; }
     .nav-btn { width: 4; } .nav-btn-year { width: 6; }
     #calendar-grid { layout: grid; grid-size: 7 7; width: 100%; height: 100%; margin: 1; }
     .day-header { width: 100%; height: 100%; text-align: center; text-style: bold; color: $accent; padding-top: 1; }
-    
     CalendarDay { width: 100%; height: 100%; border: none; }
     CalendarDay:focus { background: $accent; color: $text; }
     .selected-day { background: $primary; color: $text; text-style: bold; }
     .has-items { color: $accent-lighten-2; }
-    
     .todo-done { color: $text-muted; text-style: strike; }
     .list-header { background: $surface-lighten-1; color: $accent; text-style: bold; height: 1; content-align: center middle; margin: 1 0; }
     
-    #input-dialog, #om-dialog, #help-dialog { width: 60; height: auto; border: thick $background 80%; background: $surface; padding: 1; }
+    #input-dialog, #om-dialog, #help-dialog, #detail-dialog { 
+        width: 60; height: auto; border: thick $background 80%; background: $surface; padding: 1; 
+    }
+    #detail-dialog { height: 80%; width: 70%; }
+    #detail-scroll { height: 1fr; border: solid $secondary; padding: 1; margin: 1 0; }
+    #detail-title { text-style: bold; content-align: center middle; width: 100%; border-bottom: solid $primary; }
+    #detail-meta { color: $secondary; content-align: center middle; width: 100%; margin-bottom: 1; }
+    
     #help-dialog { grid-size: 2; grid-gutter: 1 2; }
     .dialog-buttons { align: center middle; margin-top: 1; height: 3; }
     #input-label { margin-bottom: 1; }
@@ -297,17 +321,17 @@ class TimeMapApp(App):
         Binding("q", "quit", "Quit"),
         Binding("?", "show_help", "Help"),
         # Cal Nav
-        Binding("h", "move_left", "Left", show=False),
-        Binding("l", "move_right", "Right", show=False),
-        Binding("k", "move_up", "Up", show=False),
-        Binding("j", "move_down", "Down", show=False),
+        Binding("h", "move_left", "Left", show=False), Binding(
+            "l", "move_right", "Right", show=False),
+        Binding("k", "move_up", "Up", show=False), Binding(
+            "j", "move_down", "Down", show=False),
         Binding("t", "jump_today", "Today", show=False),
-        Binding("p", "jump_prev", "Prev Day", show=False),
-        Binding("n", "jump_next", "Next Day", show=False),
-        Binding("[", "prev_month", "-Month", show=False),
-        Binding("]", "next_month", "+Month", show=False),
-        Binding("{", "prev_year", "-Year", show=False),
-        Binding("}", "next_year", "+Year", show=False),
+        Binding("p", "jump_prev", "Prev", show=False), Binding(
+            "n", "jump_next", "Next", show=False),
+        Binding("[", "prev_month", "-Month", show=False), Binding("]",
+                                                                  "next_month", "+Month", show=False),
+        Binding("{", "prev_year", "-Year", show=False), Binding("}",
+                                                                "next_year", "+Year", show=False),
         # Focus
         Binding("v", "focus_list", "Focus List"),
         Binding("enter", "focus_list", "Focus List"),
@@ -325,7 +349,6 @@ class TimeMapApp(App):
 
     def compose(self) -> ComposeResult:
         yield Header()
-        # Main Container to stack content area and status bar vertically
         yield Container(
             Container(
                 Vertical(
@@ -372,7 +395,6 @@ class TimeMapApp(App):
     def update_status(self, msg):
         self.query_one("#status-bar", Label).update(msg)
 
-    # --- ACTIONS: ASYNC COMMANDS ---
     async def action_go_day(self):
         if self.cmd_buffer.isdigit():
             day = int(self.cmd_buffer)
@@ -403,7 +425,6 @@ class TimeMapApp(App):
             self.update_status("Format: MM-DD-YYYY")
             self.cmd_buffer = ""
 
-    # --- ACTIONS: FOCUS ---
     def action_focus_list(self):
         try:
             list_view = self.query_one("ActionListView", ActionListView)
@@ -420,7 +441,6 @@ class TimeMapApp(App):
                 self.update_status("Calendar Focused")
                 break
 
-    # --- ACTIONS: ITEM LOGIC ---
     def action_remove_item(self, item):
         db.delete_item(item.item_id)
         self.show_details()
@@ -467,6 +487,21 @@ class TimeMapApp(App):
                 self.notify(f"Opening link: {link}")
             else:
                 self.notify("No link found in todo")
+        elif item.type == 'note':
+            self.push_screen(TextDetailScreen("Note", item.content))
+        elif item.type == 'diary':
+            if item.date_str:
+                try:
+                    d = date.fromisoformat(item.date_str)
+                    weekday = d.strftime("%A")
+                    meta = f"{item.date_str} | {
+                        weekday} | Mood: {item.mood or 'N/A'}"
+                except ValueError:
+                    meta = ""
+            else:
+                meta = ""
+            title = item.alias if item.alias else "Diary"
+            self.push_screen(TextDetailScreen(title, item.content, meta))
 
     def action_open_custom(self):
         try:
@@ -541,17 +576,26 @@ class TimeMapApp(App):
         except Exception:
             items = []
 
-        date_items = [i for i in items if i[1] != 'todo']
+        date_items = [i for i in items if i[1] != 'todo' and i[1] != 'diary']
         todo_items = [i for i in items if i[1] == 'todo']
+        diary_items = [i for i in items if i[1] == 'diary']
+
         todo_items.sort(key=lambda x: x[3])
 
         widgets = []
         for i in date_items:
-            widgets.append(DetailItem(i[0], i[1], i[2], i[3], i[4], i[5]))
+            widgets.append(DetailItem(
+                i[0], i[1], i[2], i[3], i[4], i[5], i[6], target_date_str))
         if todo_items:
             widgets.append(HeaderItem("── To Do List ──"))
             for i in todo_items:
-                widgets.append(DetailItem(i[0], i[1], i[2], i[3], i[4], i[5]))
+                widgets.append(DetailItem(
+                    i[0], i[1], i[2], i[3], i[4], i[5], i[6], target_date_str))
+        if diary_items:
+            widgets.append(HeaderItem("── Diaries ──"))
+            for i in diary_items:
+                widgets.append(DetailItem(
+                    i[0], i[1], i[2], i[3], i[4], i[5], i[6], target_date_str))
 
         if not widgets:
             panel.mount(Label("No items found."))
@@ -559,7 +603,6 @@ class TimeMapApp(App):
             list_view = ActionListView(*widgets)
             panel.mount(list_view)
 
-    # --- NAVIGATION ACTIONS (MUST BE ASYNC) ---
     async def change_selected_date(self, new_date: date):
         self.current_date_obj = new_date
         if (new_date.year != self.display_year) or (new_date.month != self.display_month):
@@ -616,13 +659,10 @@ class TimeMapApp(App):
 
     @on(Button.Pressed, "#btn-prev-month")
     async def on_prev_month_click(self): await self.action_prev_month()
-
     @on(Button.Pressed, "#btn-next-month")
     async def on_next_month_click(self): await self.action_next_month()
-
     @on(Button.Pressed, "#btn-prev-year")
     async def on_prev_year_click(self): await self.action_prev_year()
-
     @on(Button.Pressed, "#btn-next-year")
     async def on_next_year_click(self): await self.action_next_year()
 

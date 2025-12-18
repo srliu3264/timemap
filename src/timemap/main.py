@@ -28,6 +28,13 @@ def add2do(content: str):
     print("Added todo item.")
 
 
+@app.command()
+def adddiary(title: str, content: str, mood: str = typer.Option("Neutral", help="Mood"), date: str = typer.Option(None, help="YYYY-MM-DD")):
+    """Add a diary entry."""
+    db.add_item("diary", content, date, alias=title, mood=mood)
+    print(f"Added diary '{title}' for {date or 'today'}")
+
+
 @app.callback(invoke_without_command=True)
 def main(ctx: typer.Context,
          config_flag: bool = typer.Option(

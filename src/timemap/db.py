@@ -12,9 +12,10 @@ def get_db():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
 
+    # Added 'mood' column
     c.execute('''CREATE TABLE IF NOT EXISTS items
                  (id INTEGER PRIMARY KEY, date TEXT, type TEXT, content TEXT, 
-                  is_done INTEGER DEFAULT 0, finish_date TEXT, alias TEXT)''')
+                  is_done INTEGER DEFAULT 0, finish_date TEXT, alias TEXT, mood TEXT)''')
 
     # MIGRATIONS
     c.execute("PRAGMA table_info(items)")
@@ -25,17 +26,19 @@ def get_db():
         c.execute("ALTER TABLE items ADD COLUMN finish_date TEXT")
     if 'alias' not in columns:
         c.execute("ALTER TABLE items ADD COLUMN alias TEXT")
+    if 'mood' not in columns:
+        c.execute("ALTER TABLE items ADD COLUMN mood TEXT")
 
     conn.commit()
     return conn
 
 
-def add_item(item_type: str, content: str, target_date: str = None):
+def add_item(item_type: str, content: str, target_date: str = None, alias: str = None, mood: str = None):
     if target_date is None:
         target_date = date.today().isoformat()
     conn = get_db()
-    conn.execute("INSERT INTO items (date, type, content, is_done, finish_date, alias) VALUES (?, ?, ?, 0, NULL, NULL)",
-                 (target_date, item_type, content))
+    conn.execute("INSERT INTO items (date, type, content, is_done, finish_date, alias, mood) VALUES (?, ?, ?, 0, NULL, ?, ?)",
+                 (target_date, item_type, content, alias, mood))
     conn.commit()
     conn.close()
 
@@ -44,14 +47,13 @@ def get_items_for_date(target_date: str) -> List[Tuple]:
     conn = get_db()
     c = conn.cursor()
 
-    # SELECT now includes 'alias' at index 5
-    # 1. Non-todos
-    c.execute("SELECT id, type, content, is_done, finish_date, alias FROM items WHERE date = ? AND type != 'todo'", (target_date,))
+    # 1. Non-todos (Files, Notes, Diaries)
+    c.execute("SELECT id, type, content, is_done, finish_date, alias, mood FROM items WHERE date = ? AND type != 'todo'", (target_date,))
     items = c.fetchall()
 
     # 2. Todos
     c.execute("""
-        SELECT id, type, content, is_done, finish_date, alias FROM items 
+        SELECT id, type, content, is_done, finish_date, alias, mood FROM items 
         WHERE type = 'todo' 
           AND date <= ? 
           AND (is_done = 0 OR finish_date >= ?)
