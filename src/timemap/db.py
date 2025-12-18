@@ -11,15 +11,18 @@ def get_db():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
 
-    # Create table if it doesn't exist
+    # Create table with finish_date
     c.execute('''CREATE TABLE IF NOT EXISTS items
-                 (id INTEGER PRIMARY KEY, date TEXT, type TEXT, content TEXT, is_done INTEGER DEFAULT 0)''')
+                 (id INTEGER PRIMARY KEY, date TEXT, type TEXT, content TEXT, 
+                  is_done INTEGER DEFAULT 0, finish_date TEXT)''')
 
-    # MIGRATION: Check if is_done exists (for old databases)
+    # MIGRATION: Ensure columns exist for older DBs
     c.execute("PRAGMA table_info(items)")
     columns = [info[1] for info in c.fetchall()]
     if 'is_done' not in columns:
         c.execute("ALTER TABLE items ADD COLUMN is_done INTEGER DEFAULT 0")
+    if 'finish_date' not in columns:
+        c.execute("ALTER TABLE items ADD COLUMN finish_date TEXT")
 
     conn.commit()
     return conn
@@ -30,30 +33,64 @@ def add_item(item_type: str, content: str, target_date: str = None):
         target_date = date.today().isoformat()
 
     conn = get_db()
-    conn.execute("INSERT INTO items (date, type, content, is_done) VALUES (?, ?, ?, 0)",
+    # is_done defaults to 0, finish_date defaults to NULL
+    conn.execute("INSERT INTO items (date, type, content, is_done, finish_date) VALUES (?, ?, ?, 0, NULL)",
                  (target_date, item_type, content))
     conn.commit()
     conn.close()
 
 
 def get_items_for_date(target_date: str) -> List[Tuple]:
+    """
+    Fetch logic:
+    1. Normal items: date == target_date
+    2. Todos:
+       - Created ON or BEFORE target_date (date <= target_date)
+       - AND (Unfinished OR Finished ON or AFTER target_date)
+    """
     conn = get_db()
     c = conn.cursor()
-    # Get files and notes for specific date
-    c.execute(
-        "SELECT id, type, content, is_done FROM items WHERE date = ? AND type != 'todo'", (target_date,))
+
+    # 1. Non-todo items
+    c.execute("SELECT id, type, content, is_done, finish_date FROM items WHERE date = ? AND type != 'todo'", (target_date,))
     items = c.fetchall()
 
-    # Get ALL todos
-    c.execute("SELECT id, type, content, is_done FROM items WHERE type = 'todo'")
+    # 2. Todo items
+    # Rule: Show if created <= today AND (not done OR done >= today)
+    c.execute("""
+        SELECT id, type, content, is_done, finish_date FROM items 
+        WHERE type = 'todo' 
+          AND date <= ? 
+          AND (is_done = 0 OR finish_date >= ?)
+    """, (target_date, target_date))
+
     items.extend(c.fetchall())
     conn.close()
     return items
 
 
-def toggle_todo_status(item_id: int):
+def toggle_todo_status(item_id: int, action_date: str):
+    """
+    Toggle todo status.
+    - If marking DONE: set finish_date to action_date.
+    - If marking UNDONE: set finish_date to NULL.
+    """
     conn = get_db()
-    conn.execute(
-        "UPDATE items SET is_done = 1 - is_done WHERE id = ?", (item_id,))
+    c = conn.cursor()
+
+    # Check current status
+    c.execute("SELECT is_done FROM items WHERE id = ?", (item_id,))
+    row = c.fetchone()
+    if row:
+        current_status = row[0]
+        if current_status == 0:
+            # Mark as Done
+            c.execute(
+                "UPDATE items SET is_done = 1, finish_date = ? WHERE id = ?", (action_date, item_id))
+        else:
+            # Undo
+            c.execute(
+                "UPDATE items SET is_done = 0, finish_date = NULL WHERE id = ?", (item_id,))
+
     conn.commit()
     conn.close()

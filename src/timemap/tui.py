@@ -5,7 +5,7 @@ from textual.screen import ModalScreen
 from textual.binding import Binding
 from textual import on
 import calendar
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 import subprocess
 import os
 
@@ -77,11 +77,10 @@ class CalendarDay(Button):
 class DetailItem(ListItem):
     """A list item representing a file, note, or todo."""
 
-    def __init__(self, item_id, type, content, is_done=False):
-        # 1. Determine visual state first
+    def __init__(self, item_id, type, content, is_done=False, finish_date=None):
+        # 1. Logic for display
         icon = ""
         display_text = content
-
         should_strike = False
 
         if type == 'file':
@@ -92,13 +91,21 @@ class DetailItem(ListItem):
             if is_done:
                 icon = "✅"
                 should_strike = True
+                # Format timestamp: YYYY-MM-DD -> MM/DD/YYYY
+                if finish_date:
+                    try:
+                        dt = date.fromisoformat(finish_date)
+                        fmt_date = dt.strftime("%m/%d/%Y")
+                        display_text += f" [{fmt_date}]"
+                    except ValueError:
+                        pass
             else:
                 icon = "⬜"
 
-        # 2. Call super() FIRST to initialize the widget
+        # 2. Initialize
         super().__init__(Label(f"{icon} {display_text}"))
 
-        # 3. NOW set attributes and classes
+        # 3. Set Attributes
         self.item_id = item_id
         self.type = type
         self.content = content
@@ -254,14 +261,15 @@ class TimeMapApp(App):
 
         if date_items:
             for item in date_items:
+                # DB returns: id, type, content, is_done, finish_date
                 widgets_to_show.append(DetailItem(
-                    item[0], item[1], item[2], item[3]))
+                    item[0], item[1], item[2], item[3], item[4]))
 
         if todo_items:
             widgets_to_show.append(HeaderItem("── To Do List ──"))
             for item in todo_items:
                 widgets_to_show.append(DetailItem(
-                    item[0], item[1], item[2], item[3]))
+                    item[0], item[1], item[2], item[3], item[4]))
 
         if not widgets_to_show:
             panel.mount(Label("No items found."))
@@ -359,7 +367,10 @@ class TimeMapApp(App):
                 else:
                     self.notify("File not found!", severity="error")
             elif item.type == 'todo':
-                db.toggle_todo_status(item.item_id)
+                # Pass current selected date so DB knows when it was finished!
+                current_date_str = self.current_date_obj.isoformat()
+                db.toggle_todo_status(item.item_id, current_date_str)
+
                 status = "Done" if not item.is_done else "Undone"
                 self.notify(f"Todo marked {status}")
                 self.show_details()
