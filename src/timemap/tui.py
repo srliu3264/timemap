@@ -94,21 +94,21 @@ class DetailItem(ListItem):
 class TimeMapApp(App):
     CSS = """
     Screen { align: center middle; }
-    
+
     /* Layout */
     #calendar-area { width: 60%; height: 100%; }
     #details-panel { width: 40%; height: 100%; border-left: solid $accent; padding: 1; }
-    
+
     /* Calendar Header */
-    #cal-header { 
-        height: 3; 
-        width: 100%; 
+    #cal-header {
+        height: 3;
+        width: 100%;
         align: center middle;
         margin-bottom: 1;
     }
-    .month-label { 
-        width: 20; 
-        text-align: center; 
+    .month-label {
+        width: 20;
+        text-align: center;
         text-style: bold;
         padding-top: 1;
     }
@@ -123,7 +123,7 @@ class TimeMapApp(App):
         height: 100%;
         margin: 1;
     }
-    
+
     .day-header {
         width: 100%;
         height: 100%;
@@ -151,7 +151,7 @@ class TimeMapApp(App):
         border: thick $background 80%;
         background: $surface;
     }
-    
+
     #help-title { column-span: 2; height: 1fr; width: 1fr; content-align: center middle; text-style: bold; border-bottom: solid $primary; margin-bottom: 1; }
     .help-header { column-span: 2; width: 1fr; content-align: center middle; text-style: bold; color: $accent; margin-top: 1; }
     .help-key { text-align: right; color: $secondary; text-style: bold; }
@@ -257,12 +257,13 @@ class TimeMapApp(App):
             panel.mount(Label("No items found."))
             return
 
+        # FIX: Mount the ListView FIRST
         list_view = ListView()
-        for item in items:
-            list_view.append(DetailItem(item[0], item[1], item[2]))
-
         panel.mount(list_view)
 
+        # NOW append items (since list_view is now part of the app)
+        for item in items:
+            list_view.append(DetailItem(item[0], item[1], item[2]))
     # --- DATE NAVIGATION LOGIC ---
 
     async def change_selected_date(self, new_date: date):
