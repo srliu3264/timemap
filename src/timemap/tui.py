@@ -15,7 +15,6 @@ from . import db
 
 
 class HelpScreen(ModalScreen):
-    """Screen with a dialog to show keybindings."""
     BINDINGS = [
         Binding("?", "close_help", "Close Help"),
         Binding("escape", "close_help", "Close Help"),
@@ -56,14 +55,19 @@ class HelpScreen(ModalScreen):
 
 
 class CalendarDay(Button):
-    def __init__(self, day_num: int, current_year: int, current_month: int):
+    def __init__(self, day_num: int, current_year: int, current_month: int, has_items: bool):
         self.day_num = day_num
         if day_num != 0:
             try:
                 self.full_date = date(current_year, current_month, day_num)
             except ValueError:
                 self.full_date = None
+
+            # Add Star if has_items is True
             label = str(day_num)
+            if has_items:
+                label += " ★"
+
             id_str = f"day-{day_num}"
             disabled_flag = False
         else:
@@ -73,6 +77,10 @@ class CalendarDay(Button):
             disabled_flag = True
         super().__init__(label, id=id_str, disabled=disabled_flag)
 
+        # Add a class for styling days with items if you want custom colors later
+        if has_items:
+            self.add_class("has-items")
+
 
 class DetailItem(ListItem):
     """A list item representing a file, note, or todo."""
@@ -80,18 +88,20 @@ class DetailItem(ListItem):
     def __init__(self, item_id, type, content, is_done=False, finish_date=None):
         # 1. Logic for display
         icon = ""
-        display_text = content
-        should_strike = False
 
+        # FIX: Show filename only for files, but keep full path in self.content
         if type == 'file':
             icon = "📁"
+            display_text = os.path.basename(content)
         elif type == 'note':
             icon = "📝"
+            display_text = content
         elif type == 'todo':
+            display_text = content
+            should_strike = False
             if is_done:
                 icon = "✅"
                 should_strike = True
-                # Format timestamp: YYYY-MM-DD -> MM/DD/YYYY
                 if finish_date:
                     try:
                         dt = date.fromisoformat(finish_date)
@@ -111,7 +121,7 @@ class DetailItem(ListItem):
         self.content = content
         self.is_done = is_done
 
-        if should_strike:
+        if type == 'todo' and is_done:
             self.add_class("todo-done")
 
 
@@ -141,6 +151,7 @@ class TimeMapApp(App):
     .day-header { width: 100%; height: 100%; text-align: center; text-style: bold; color: $accent; padding-top: 1; }
     CalendarDay { width: 100%; height: 100%; }
     .selected-day { background: $primary; color: $text; text-style: bold; }
+    .has-items { color: $accent-lighten-2; } /* Make star days slightly distinctive */
 
     /* --- ITEM LIST CSS --- */
     .todo-done {
@@ -226,10 +237,19 @@ class TimeMapApp(App):
             grid.mount(Label(day_name, classes="day-header"))
 
         cal = calendar.monthcalendar(self.display_year, self.display_month)
+
+        # FIX: Get marked days for stars
+        marked_days = db.get_marked_days(self.display_year, self.display_month)
+
         day_to_focus = None
         for week in cal:
             for day in week:
-                btn = CalendarDay(day, self.display_year, self.display_month)
+                # Pass has_items=True if day is in marked_days
+                has_items = (day in marked_days)
+
+                btn = CalendarDay(day, self.display_year,
+                                  self.display_month, has_items)
+
                 if day != 0:
                     btn_date = date(self.display_year, self.display_month, day)
                     if btn_date == self.current_date_obj:
@@ -254,14 +274,12 @@ class TimeMapApp(App):
         date_items = [i for i in items if i[1] != 'todo']
         todo_items = [i for i in items if i[1] == 'todo']
 
-        # Sort Todos: Unfinished (0) first, Done (1) last
         todo_items.sort(key=lambda x: x[3])
 
         widgets_to_show = []
 
         if date_items:
             for item in date_items:
-                # DB returns: id, type, content, is_done, finish_date
                 widgets_to_show.append(DetailItem(
                     item[0], item[1], item[2], item[3], item[4]))
 
@@ -374,6 +392,11 @@ class TimeMapApp(App):
                 status = "Done" if not item.is_done else "Undone"
                 self.notify(f"Todo marked {status}")
                 self.show_details()
+
+                # REFRESH CALENDAR because stars might have changed
+                # (e.g. if we finished the last todo on a specific day)
+                self.run_worker(self.refresh_calendar())
+
             elif item.type == 'note':
                 self.notify(item.content, title="Note", timeout=5)
 
