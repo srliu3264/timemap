@@ -4,6 +4,7 @@ from textual.widgets import Header, Footer, Button, Label, ListView, ListItem, I
 from textual.screen import ModalScreen
 from textual.binding import Binding
 from textual import on, events
+from textual.message import Message
 import calendar
 from datetime import date, timedelta, datetime
 import subprocess
@@ -25,7 +26,6 @@ def open_url(url):
 
 
 def get_terminal_cmd():
-    """Detects the user's terminal emulator."""
     terminals = ["kitty", "alacritty", "wezterm",
                  "gnome-terminal", "xfce4-terminal", "xterm"]
     env_term = os.environ.get("TERMINAL")
@@ -49,29 +49,18 @@ class InputScreen(ModalScreen):
         yield Grid(
             Label(self.prompt_text, id="input-label"),
             Input(self.initial_value, id="input-box"),
-            Horizontal(
-                Button("Cancel", id="btn-cancel"),
-                Button("OK", variant="primary", id="btn-ok"),
-                classes="dialog-buttons"
-            ),
+            Horizontal(Button("Cancel", id="btn-cancel"), Button("OK",
+                       variant="primary", id="btn-ok"), classes="dialog-buttons"),
             id="input-dialog"
         )
 
-    def on_mount(self):
-        self.query_one(Input).focus()
-
+    def on_mount(self): self.query_one(Input).focus()
     @on(Button.Pressed, "#btn-ok")
-    def on_ok(self):
-        val = self.query_one(Input).value
-        self.dismiss(val)
-
+    def on_ok(self): self.dismiss(self.query_one(Input).value)
     @on(Button.Pressed, "#btn-cancel")
-    def on_cancel(self):
-        self.dismiss(None)
-
+    def on_cancel(self): self.dismiss(None)
     @on(Input.Submitted)
-    def on_submit(self):
-        self.on_ok()
+    def on_submit(self): self.on_ok()
 
 
 class OpenMethodScreen(ModalScreen):
@@ -90,8 +79,7 @@ class OpenMethodScreen(ModalScreen):
             id="om-dialog"
         )
 
-    def on_mount(self):
-        self.query_one(ListView).focus()
+    def on_mount(self): self.query_one(ListView).focus()
 
     @on(ListView.Selected)
     def on_select(self, event: ListView.Selected):
@@ -108,8 +96,7 @@ class OpenMethodScreen(ModalScreen):
             self.dismiss("CUSTOM")
 
     @on(Button.Pressed, "#om-cancel")
-    def cancel(self):
-        self.dismiss(None)
+    def cancel(self): self.dismiss(None)
 
 
 class HelpScreen(ModalScreen):
@@ -119,28 +106,32 @@ class HelpScreen(ModalScreen):
     def compose(self) -> ComposeResult:
         yield Grid(
             Label("TimeMap Help", id="help-title"),
-            Label("Navigation", classes="help-header"),
-            Label("h / l", classes="help-key"), Label("Prev / Next Day",
-                                                      classes="help-desc"),
-            Label("k / j", classes="help-key"), Label("Prev / Next Week",
-                                                      classes="help-desc"),
-            Label("t", classes="help-key"),     Label("Jump to Today",
-                                                      classes="help-desc"),
-            Label("Item Actions", classes="help-header"),
-            Label("o", classes="help-key"),     Label("Open / Open Link",
-                                                      classes="help-desc"),
-            Label("e", classes="help-key"),     Label("Edit Note/Todo",
-                                                      classes="help-desc"),
-            Label("f", classes="help-key"),     Label("Toggle Finish (Todo)",
-                                                      classes="help-desc"),
-            Label("r", classes="help-key"),     Label("Remove Item",
-                                                      classes="help-desc"),
-            Label("ctrl+n", classes="help-key"), Label("Rename File Alias",
-                                                       classes="help-desc"),
-            Label("General", classes="help-header"),
-            Label("?", classes="help-key"),     Label("Close Help",
-                                                      classes="help-desc"),
-            Label("q", classes="help-key"),     Label("Quit", classes="help-desc"),
+            Label("Global", classes="help-header"),
+            Label("v / Enter", classes="help-key"), Label(
+                "Switch Focus (List/Cal)", classes="help-desc"),
+            Label("q", classes="help-key"),       Label("Quit",
+                                                        classes="help-desc"),
+
+            Label("Calendar Mode", classes="help-header"),
+            Label("h j k l", classes="help-key"), Label("Navigate Date",
+                                                        classes="help-desc"),
+            Label("1-31 + g", classes="help-key"), Label("Go to Day",
+                                                         classes="help-desc"),
+            Label("date + G", classes="help-key"), Label("Go to Date (mm-dd-yyyy)",
+                                                         classes="help-desc"),
+
+            Label("List Mode", classes="help-header"),
+            Label("j / k", classes="help-key"),   Label("Navigate Items",
+                                                        classes="help-desc"),
+            Label("o", classes="help-key"),       Label("Open / Open Link",
+                                                        classes="help-desc"),
+            Label("O (shift+o)", classes="help-key"), Label("Open With...",
+                                                            classes="help-desc"),
+            Label("r / e", classes="help-key"),   Label("Remove / Edit",
+                                                        classes="help-desc"),
+            Label("n", classes="help-key"),       Label("Rename Alias",
+                                                        classes="help-desc"),
+
             Button("Close", variant="primary", id="close-help"),
             id="help-dialog"
         )
@@ -196,29 +187,52 @@ class HeaderItem(ListItem):
 
 
 class ActionListView(ListView):
-    """Handles key events for the focused list."""
+    """ListView with bindings that ONLY apply when focused."""
+    BINDINGS = [
+        Binding("o", "open_default", "Open"),
+        Binding("O", "open_custom", "Open With"),
+        Binding("n", "rename_item", "Rename"),
+        Binding("r", "remove_item", "Remove"),
+        Binding("e", "edit_item", "Edit"),
+        Binding("f", "toggle_finish", "Toggle Finish"),
+        # Navigation overrides for List Mode
+        Binding("j", "cursor_down", "Down", show=False),
+        Binding("k", "cursor_up", "Up", show=False),
+        Binding("h", "unfocus_list", "Back to Cal", show=False),
+        Binding("v", "unfocus_list", "Back to Cal", show=False),
+        Binding("escape", "unfocus_list", "Back to Cal", show=False),
+    ]
 
-    def on_key(self, event: events.Key):
-        if not isinstance(self.highlighted_child, DetailItem):
-            return
+    def action_unfocus_list(self):
+        self.app.action_focus_calendar()
+
+    def action_open_default(self):
         item = self.highlighted_child
-        key = event.key
-
-        if key == "r":
-            self.app.action_remove_item(item)
-        elif key == "e":
-            if item.type in ['note', 'todo']:
-                self.app.action_edit_item(item)
-        elif key == "f":
-            if item.type == 'todo':
-                self.app.action_toggle_finish(item)
-        elif key == "ctrl+n":
-            if item.type == 'file':
-                self.app.action_rename_alias(item)
-        elif key == "o":
+        if isinstance(item, DetailItem):
             self.app.action_smart_open(item)
-        elif key == "O":  # Shift+o
-            self.app.action_open_custom()
+
+    def action_open_custom(self):
+        self.app.action_open_custom()
+
+    def action_rename_item(self):
+        item = self.highlighted_child
+        if isinstance(item, DetailItem) and item.type == 'file':
+            self.app.action_rename_alias(item)
+
+    def action_remove_item(self):
+        item = self.highlighted_child
+        if isinstance(item, DetailItem):
+            self.app.action_remove_item(item)
+
+    def action_edit_item(self):
+        item = self.highlighted_child
+        if isinstance(item, DetailItem) and item.type in ['note', 'todo']:
+            self.app.action_edit_item(item)
+
+    def action_toggle_finish(self):
+        item = self.highlighted_child
+        if isinstance(item, DetailItem) and item.type == 'todo':
+            self.app.action_toggle_finish(item)
 
 
 class CalendarDay(Button):
@@ -252,9 +266,14 @@ class TimeMapApp(App):
     .nav-btn { width: 4; } .nav-btn-year { width: 6; }
     #calendar-grid { layout: grid; grid-size: 7 7; width: 100%; height: 100%; margin: 1; }
     .day-header { width: 100%; height: 100%; text-align: center; text-style: bold; color: $accent; padding-top: 1; }
-    CalendarDay { width: 100%; height: 100%; }
+    
+    CalendarDay { width: 100%; height: 100%; border: none; }
+    CalendarDay:focus { background: $accent; color: $text; }
     .selected-day { background: $primary; color: $text; text-style: bold; }
     .has-items { color: $accent-lighten-2; }
+    
+    #status-bar { width: 100%; height: 1; background: $surface; color: $text; dock: bottom; padding-left: 1; }
+    
     .todo-done { color: $text-muted; text-style: strike; }
     .list-header { background: $surface-lighten-1; color: $accent; text-style: bold; height: 1; content-align: center middle; margin: 1 0; }
     
@@ -270,19 +289,32 @@ class TimeMapApp(App):
     """
 
     BINDINGS = [
-        Binding("h", "move_left", "Left", show=False), Binding(
-            "l", "move_right", "Right", show=False),
-        Binding("k", "move_up", "Up", show=False), Binding(
-            "j", "move_down", "Down", show=False),
+        # GLOBAL BINDINGS
+        Binding("q", "quit", "Quit"),
+        Binding("?", "show_help", "Help"),
+
+        # CALENDAR NAVIGATION (App level - active when Grid is focused)
+        Binding("h", "move_left", "Left", show=False),
+        Binding("l", "move_right", "Right", show=False),
+        Binding("k", "move_up", "Up", show=False),
+        Binding("j", "move_down", "Down", show=False),
+
         Binding("t", "jump_today", "Today", show=False),
-        Binding("p", "jump_prev", "Prev", show=False), Binding(
-            "n", "jump_next", "Next", show=False),
-        Binding("[", "prev_month", "-Month", show=False), Binding("]",
-                                                                  "next_month", "+Month", show=False),
-        Binding("{", "prev_year", "-Year", show=False), Binding("}",
-                                                                "next_year", "+Year", show=False),
-        Binding("?", "show_help", "Help", show=True), Binding(
-            "q", "quit", "Quit", show=True),
+        Binding("p", "jump_prev", "Prev Day", show=False),
+        Binding("n", "jump_next", "Next Day", show=False),
+
+        Binding("[", "prev_month", "-Month", show=False),
+        Binding("]", "next_month", "+Month", show=False),
+        Binding("{", "prev_year", "-Year", show=False),
+        Binding("}", "next_year", "+Year", show=False),
+
+        # Focus Switching
+        Binding("v", "focus_list", "Focus List"),
+        Binding("enter", "focus_list", "Focus List"),
+
+        # Shortcuts for Jumping
+        Binding("g", "go_day", "Go Day", show=False),
+        Binding("G", "go_date", "Go Date", show=False),
     ]
 
     def __init__(self):
@@ -290,6 +322,7 @@ class TimeMapApp(App):
         self.current_date_obj = date.today()
         self.display_year = self.current_date_obj.year
         self.display_month = self.current_date_obj.month
+        self.cmd_buffer = ""
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -308,23 +341,85 @@ class TimeMapApp(App):
             ),
             Vertical(Label("Select a date..."), id="details-panel")
         )
+        yield Label("", id="status-bar")
         yield Footer()
 
     async def on_mount(self):
         await self.refresh_calendar()
         self.show_details()
 
-    def action_show_help(self): self.push_screen(HelpScreen())
+    # --- KEY HANDLING FOR BUFFER ---
+    def on_key(self, event: events.Key):
+        # Capture numbers and dashes for command buffer
+        if event.character and event.character in "0123456789-":
+            self.cmd_buffer += event.character
+            self.update_status(f"Cmd: {self.cmd_buffer}")
+        elif event.key == "escape":
+            self.cmd_buffer = ""
+            self.update_status("")
+            # Also reset focus to calendar if in list
+            self.action_focus_calendar()
 
-    # --- ITEM LOGIC ---
+    def update_status(self, msg):
+        self.query_one("#status-bar", Label).update(msg)
 
-    def action_remove_item(self, item: DetailItem):
+    # --- ACTIONS: JUMPING ---
+    async def action_go_day(self):
+        if self.cmd_buffer.isdigit():
+            day = int(self.cmd_buffer)
+            try:
+                new_date = date(self.display_year, self.display_month, day)
+                self.cmd_buffer = ""
+                self.update_status(f"Jumped to day {day}")
+                await self.change_selected_date(new_date)
+            except ValueError:
+                self.update_status("Invalid day")
+                self.cmd_buffer = ""
+        else:
+            self.cmd_buffer = ""
+            self.update_status("")
+
+    async def action_go_date(self):
+        if re.match(r"\d{1,2}-\d{1,2}-\d{4}", self.cmd_buffer):
+            try:
+                parts = self.cmd_buffer.split('-')
+                # Format: MM-DD-YYYY
+                new_date = date(int(parts[2]), int(parts[0]), int(parts[1]))
+                self.cmd_buffer = ""
+                self.update_status(f"Jumped to {new_date}")
+                await self.change_selected_date(new_date)
+            except ValueError:
+                self.update_status("Invalid Date")
+                self.cmd_buffer = ""
+        else:
+            self.update_status("Format: MM-DD-YYYY")
+            self.cmd_buffer = ""
+
+    # --- ACTIONS: FOCUS ---
+    def action_focus_list(self):
+        try:
+            list_view = self.query_one("ActionListView", ActionListView)
+            list_view.focus()
+            self.update_status("List Focused")
+        except Exception:
+            self.notify("List is empty or not available")
+
+    def action_focus_calendar(self):
+        grid = self.query_one("#calendar-grid", Grid)
+        for child in grid.children:
+            if "selected-day" in child.classes:
+                child.focus()
+                self.update_status("Calendar Focused")
+                break
+
+    # --- ACTIONS: ITEM LOGIC (Proxied from ActionListView) ---
+    def action_remove_item(self, item):
         db.delete_item(item.item_id)
         self.show_details()
         self.run_worker(self.refresh_calendar())
         self.notify("Item removed")
 
-    def action_edit_item(self, item: DetailItem):
+    def action_edit_item(self, item):
         def callback(new_val):
             if new_val and new_val != item.content:
                 db.update_item_content(item.item_id, new_val)
@@ -333,7 +428,7 @@ class TimeMapApp(App):
         self.push_screen(InputScreen(
             f"Edit {item.type}:", item.content), callback)
 
-    def action_rename_alias(self, item: DetailItem):
+    def action_rename_alias(self, item):
         current_val = item.alias if item.alias else os.path.basename(
             item.content)
 
@@ -344,15 +439,13 @@ class TimeMapApp(App):
                 self.notify("Alias updated")
         self.push_screen(InputScreen("Rename (Alias):", current_val), callback)
 
-    def action_toggle_finish(self, item: DetailItem):
+    def action_toggle_finish(self, item):
         date_str = self.current_date_obj.isoformat()
         db.toggle_todo_status(item.item_id, date_str)
-        status = "Done" if not item.is_done else "Undone"
-        self.notify(f"Todo {status}")
         self.show_details()
         self.run_worker(self.refresh_calendar())
 
-    def action_smart_open(self, item: DetailItem):
+    def action_smart_open(self, item):
         if item.type == 'file':
             cmd = config.get_open_command(item.content)
             self.open_file(item.content, cmd)
@@ -385,26 +478,21 @@ class TimeMapApp(App):
         if not os.path.exists(path):
             self.notify("File missing", severity="error")
             return
-
         cmd_list = [command, path]
         term_apps = ['nvim', 'vim', 'vi', 'nano', 'htop', 'less', 'top']
-        cmd_name = os.path.basename(command)
-
-        if cmd_name in term_apps:
+        if os.path.basename(command) in term_apps:
             term = get_terminal_cmd()
             cmd_list = [term, "-e", command, path]
-            self.notify(f"Launching in {term}...")
-        else:
-            self.notify(f"Opened with {command}")
-
         try:
             subprocess.Popen(cmd_list, start_new_session=True,
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except FileNotFoundError:
             self.notify(f"Command '{command}' not found", severity="error")
 
-    # --- REFRESH LOGIC ---
+    # --- ACTIONS: MODALS ---
+    def action_show_help(self): self.push_screen(HelpScreen())
 
+    # --- REFRESH LOGIC ---
     async def refresh_calendar(self):
         month_name = calendar.month_name[self.display_month]
         self.query_one(
@@ -427,15 +515,20 @@ class TimeMapApp(App):
                         btn.add_class("selected-day")
                         day_to_focus = btn
                 grid.mount(btn)
-        if day_to_focus:
-            day_to_focus.focus()
+
+        # Restore focus to calendar if appropriate
+        try:
+            if not self.query_one("ActionListView").has_focus and day_to_focus:
+                day_to_focus.focus()
+        except Exception:
+            if day_to_focus:
+                day_to_focus.focus()
 
     def show_details(self):
         target_date_str = self.current_date_obj.isoformat()
         panel = self.query_one("#details-panel")
         panel.remove_children()
         panel.mount(Label(f"Items for {target_date_str}:"))
-
         try:
             items = db.get_items_for_date(target_date_str)
         except Exception:
@@ -460,7 +553,6 @@ class TimeMapApp(App):
             panel.mount(list_view)
 
     # --- NAVIGATION ---
-
     async def change_selected_date(self, new_date: date):
         self.current_date_obj = new_date
         if (new_date.year != self.display_year) or (new_date.month != self.display_month):
@@ -491,6 +583,7 @@ class TimeMapApp(App):
     async def action_jump_next(self):
         await self.change_selected_date(self.current_date_obj + timedelta(days=1))
 
+    # --- ASYNC HEADER NAV ---
     async def action_prev_month(self):
         if self.display_month == 1:
             self.display_month = 12
@@ -516,20 +609,16 @@ class TimeMapApp(App):
         await self.refresh_calendar()
 
     @on(Button.Pressed, "#btn-prev-month")
-    async def on_prev_month_click(self):
-        await self.action_prev_month()
+    async def on_prev_month_click(self): await self.action_prev_month()
 
     @on(Button.Pressed, "#btn-next-month")
-    async def on_next_month_click(self):
-        await self.action_next_month()
+    async def on_next_month_click(self): await self.action_next_month()
 
     @on(Button.Pressed, "#btn-prev-year")
-    async def on_prev_year_click(self):
-        await self.action_prev_year()
+    async def on_prev_year_click(self): await self.action_prev_year()
 
     @on(Button.Pressed, "#btn-next-year")
-    async def on_next_year_click(self):
-        await self.action_next_year()
+    async def on_next_year_click(self): await self.action_next_year()
 
     @on(Button.Pressed)
     async def on_day_click(self, event: Button.Pressed):
@@ -537,8 +626,7 @@ class TimeMapApp(App):
             await self.change_selected_date(event.button.full_date)
 
     @on(ListView.Selected)
-    def on_item_click(self, event: ListView.Selected):
-        pass
+    def on_item_click(self, event: ListView.Selected): pass
 
 
 def run_tui():
