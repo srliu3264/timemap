@@ -606,13 +606,13 @@ class TimeMapApp(App):
     .nav-btn { width: 4; } .nav-btn-year { width: 6; }
     #calendar-grid { layout: grid; grid-size: 7 7; width: 100%; height: 100%; margin: 1; }
     .day-header { width: 100%; height: 100%; text-align: center; text-style: bold; color: $accent; padding-top: 1; }
-    CalendarDay { width: 100%; height: 100%; border: none; background: $surface; padding: 0 1; box-sizing: border-box;}
+    CalendarDay { width: 100%; height: 100%; border: none; background: $surface; padding: 0 1; box-sizing: border-box; align: center middle;}
     CalendarDay:hover {background: $surface-lighten-2; }
     CalendarDay:focus { background: $accent; color: $text; }
     .selected-day { background: $primary; color: $text; text-style: bold; }
 
-    .day-row { height: 1; width: 100%; layout: horizontal; }
-    .day-center { height: 1fr; width: 100%; align: center middle; }
+    .day-row { height: auto; width: 100%; layout: horizontal; padding: 0 1;}
+    .day-center { height: auto; width: 100%; align: center middle; padding: 0; margin: 0}
     .day-num { text-style: bold; }
     .corner-icon { width: 1fr; }
     .left { text_align: left; } .right { text_align: right; }
@@ -974,8 +974,9 @@ class TimeMapApp(App):
         day_to_focus = None
         for week in cal:
             for day in week:
-                day_stats = stats.get(day,{})
-                widget = CalendarDay(day,self.display_year,self.display_month,day_stats,self.simple_view)
+                day_stats = stats.get(day, {})
+                widget = CalendarDay(
+                    day, self.display_year, self.display_month, day_stats, self.simple_view)
 
                 if day != 0:
                     if date(self.display_year, self.display_month, day) == self.current_date_obj:
