@@ -1181,11 +1181,11 @@ class TimeMapApp(App):
     async def action_jump_today(
         self): await self.change_selected_date(date.today())
 
-    async def action_jump_prev(self): await self.change_selected_date(
-        self.current_date_obj - timedelta(days=1))
+    async def action_jump_prev(self): 
+        await self.change_selected_date(date.today() - timedelta(days=1))
 
-    async def action_jump_next(self): await self.change_selected_date(
-        self.current_date_obj + timedelta(days=1))
+    async def action_jump_next(self): 
+        await self.change_selected_date(date.today() + timedelta(days=1))
 
     async def action_prev_month(self):
         if self.display_month == 1:
