@@ -9,6 +9,8 @@ DEFAULT_CONFIG = """
 # TimeMap Configuration
 # Uncomment lines to override system defaults
 
+# editor = "nvim"
+
 [defaults]
 # pdf = "zathura"
 # md = "nvim"
@@ -32,6 +34,14 @@ def load_config():
         return toml.load(CONFIG_PATH)
     except Exception:
         return {}
+
+
+def get_editor():
+    """Returns the preferred editor from config ->env -> default."""
+    config = load_config()
+    if "editor" in config:
+        return config["editor"]
+    return os.environ.get("EDITOR", "nvim")
 
 
 def get_open_command(filepath: str):

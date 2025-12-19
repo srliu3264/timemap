@@ -4,6 +4,7 @@ from textual.widgets import Header, Footer, Button, Label, ListView, ListItem, I
 from textual.screen import ModalScreen
 from textual.binding import Binding
 from textual import on, events, work
+import tempfile
 import calendar
 from datetime import date, timedelta, datetime
 import subprocess
@@ -464,6 +465,8 @@ class HelpScreen(ModalScreen):
                     Label(
                         "e", classes="help-key"), Label(r"\[NTD]Edit", classes="help-desc"),
                     Label(
+                        "E (Shift+e)", classes="help-key"), Label(r"\[NTD]Edit with External Editor", classes="help-desc"),
+                    Label(
                         "f", classes="help-key"), Label(r"\[T]Toggle Finish", classes="help-desc"),
                     classes="help-grid"
                 ),
@@ -536,6 +539,7 @@ class ActionListView(ListView):
         Binding("n", "rename_item", "Rename"),
         Binding("r", "remove_item", "Remove"),
         Binding("e", "edit_item", "Edit"),
+        Binding("E", "edit_external", "Edit externally"),
         Binding("f", "toggle_finish", "Toggle Finish"),
         Binding("j", "cursor_down", "Down", show=False),
         Binding("k", "cursor_up", "Up", show=False),
@@ -596,6 +600,11 @@ class ActionListView(ListView):
         item = self.highlighted_child
         if isinstance(item, DetailItem) and item.type in ['note', 'todo', 'diary']:
             self.app.action_edit_item(item)
+
+    def action_edit_external(self):
+        item = self.highlighted_child
+        if isinstance(item, DetailItem) and item.type in ['note', 'todo', 'diary']:
+            self.app.action_edit_external(item)
 
     def action_toggle_finish(self):
         item = self.highlighted_child
@@ -1016,6 +1025,31 @@ class TimeMapApp(App):
                     self.notify("Updated")
             self.push_screen(InputScreen(
                 f"Edit {item.type}:", item.content), callback)
+
+    def action_edit_external(self, item):
+        with tempfile.NamedTemporaryFile(suffix=".md", delete=False, mode='w+') as tf:
+            tf.write(item.content or "")
+            tf_path = tf.name
+        with self.suspend():
+            editor = config.get_editor()
+            try:
+                subprocess.call([editor, tf_path])
+            except FileNotFoundError:
+                print(f"Error: Editor '{editor}' not found")
+                input("Press Enter to continue...")
+        with open(tf_path, 'r') as f:
+            new_content = f.read().strip()
+        os.unlink(tf_path)
+        if new_content != item.content:
+            if item.type == 'diary':
+                current_title = item.alias or ""
+                current_mood = item.mood or ""
+                db.update_diary_item(
+                    item.item_id, current_title, current_mood, new_content)
+            else:
+                db.update_item_content(item.item_id, new_content)
+            self.show_details()
+            self.notify(f"Updated {item.type} externally")
 
     def action_rename_alias(self, item):
         current_val = item.alias if item.alias else os.path.basename(
