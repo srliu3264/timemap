@@ -166,3 +166,63 @@ def get_all_entries():
     rows = c.fetchall()
     conn.close()
     return rows
+
+
+def get_month_stats(year: int, month: int) -> dict:
+    """
+    Returns a dict where key is day (int) and value is a dict of counts.
+    """
+    conn = get_db()
+    c = conn.cursor()
+    stats = {}
+
+    # Initialize all days in month
+    _, last_day = calendar.monthrange(year, month)
+    for d in range(1, last_day + 1):
+        stats[d] = {'diary': 0, 'file': 0, 'todo': 0, 'note': 0}
+
+    # 1. Count Point Events (Diary, File, Note)
+    search_pattern = f"{year}-{month:02d}-%"
+    c.execute("""
+        SELECT date, type, count(*) 
+        FROM items 
+        WHERE type IN ('diary', 'file', 'note') AND date LIKE ?
+        GROUP BY date, type
+    """, (search_pattern,))
+
+    for date_str, type_, count in c.fetchall():
+        try:
+            d_obj = date.fromisoformat(date_str)
+            if d_obj.day in stats:
+                stats[d_obj.day][type_] = count
+        except ValueError:
+            pass
+
+    # 2. Count Todos (Ranges)
+    month_start = date(year, month, 1)
+    month_end = date(year, month, last_day)
+
+    # Fetch todos that exist before month end
+    c.execute("SELECT date, finish_date, is_done FROM items WHERE type = 'todo' AND date <= ?",
+              (month_end.isoformat(),))
+
+    for create_str, finish_str, is_done in c.fetchall():
+        try:
+            create_date = date.fromisoformat(create_str)
+            finish_date = date.fromisoformat(finish_str) if (
+                is_done and finish_str) else None
+
+            # Intersection logic
+            start = max(create_date, month_start)
+            end = min(finish_date, month_end) if finish_date else month_end
+
+            if start <= end:
+                curr = start
+                while curr <= end:
+                    stats[curr.day]['todo'] += 1
+                    curr += timedelta(days=1)
+        except ValueError:
+            continue
+
+    conn.close()
+    return stats

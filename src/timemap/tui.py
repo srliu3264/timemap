@@ -517,25 +517,75 @@ class ActionListView(ListView):
             self.app.action_toggle_finish(item)
 
 
-class CalendarDay(Button):
-    def __init__(self, day_num: int, current_year: int, current_month: int, has_items: bool):
+class CalendarDay(Vertical):
+    """
+    Handles both 'Detailed' (4-corner) and 'Simple' (Color) views.
+    """
+    can_focus = True  # Necessary to allow keyboard navigation like a Button
+
+    def __init__(self, day_num: int, current_year: int, current_month: int, stats: dict, simple_mode: bool):
         self.day_num = day_num
-        if day_num != 0:
-            try:
-                self.full_date = date(current_year, current_month, day_num)
-            except ValueError:
-                self.full_date = None
-            label = str(day_num) + (" ★" if has_items else "")
-            id_str = f"day-{day_num}"
-            disabled_flag = False
-        else:
+        self.stats = stats
+        self.simple_mode = simple_mode
+        try:
+            self.full_date = date(current_year, current_month, day_num)
+        except ValueError:
             self.full_date = None
-            label = ""
-            id_str = None
-            disabled_flag = True
-        super().__init__(label, id=id_str, disabled=disabled_flag)
-        if has_items:
-            self.add_class("has-items")
+
+        id_str = f"day-{day_num}" if day_num > 0 else None
+        super().__init__(id=id_str)
+
+        if day_num == 0:
+            self.disabled = True
+            self.add_class("empty-day")
+
+        self.has_items = sum(stats.values()) > 0
+        if self.simple_mode and self.has_items and day_num > 0:
+            self.add_class("simple-has-items")
+
+    def compose(self) -> ComposeResult:
+        if self.day_num == 0:
+            return
+
+        # --- MODE 1: SIMPLE VIEW ---
+        if self.simple_mode:
+            yield Container(
+                Label(str(self.day_num), classes="day-num-simple"),
+                classes="day-center-simple"
+            )
+            return
+
+        # --- MODE 2: DETAILED VIEW (4 Corners) ---
+        # Top Left: Heart (Diary) | Top Right: Check+Count (Todo)
+        diary_icon = "♥" if self.stats.get('diary', 0) > 0 else " "
+        todo_count = self.stats.get('todo', 0)
+        todo_str = f"☑{todo_count}" if todo_count > 0 else " "
+
+        yield Horizontal(
+            Label(diary_icon, classes="corner-icon left red"),
+            Label(todo_str, classes="corner-icon right blue"),
+            classes="day-row top"
+        )
+
+        # Center: Day Number
+        yield Container(Label(str(self.day_num), classes="day-num"), classes="day-center")
+
+        # Bottom Left: File+Count | Bottom Right: Note Icon+Count
+        file_count = self.stats.get('file', 0)
+        file_str = f"📁{file_count}" if file_count > 0 else " "
+
+        note_count = self.stats.get('note', 0)
+        note_str = f"📝{note_count}" if note_count > 0 else " "
+
+        yield Horizontal(
+            Label(file_str, classes="corner-icon left yellow"),
+            Label(note_str, classes="corner-icon right green"),
+            classes="day-row bottom"
+        )
+
+    def on_click(self):
+        if self.full_date:
+            self.app.call_from_child(self.full_date)
 
 
 class TimeMapApp(App):
@@ -551,13 +601,24 @@ class TimeMapApp(App):
     .nav-btn { width: 4; } .nav-btn-year { width: 6; }
     #calendar-grid { layout: grid; grid-size: 7 7; width: 100%; height: 100%; margin: 1; }
     .day-header { width: 100%; height: 100%; text-align: center; text-style: bold; color: $accent; padding-top: 1; }
-    CalendarDay { width: 100%; height: 100%; border: none; }
+    CalendarDay { width: 100%; height: 100%; border: none; background: $surface; padding: 0 1; box-sizing: border-box;}
+    CalendarDay:hover {background: $surface-lighten-2; }
     CalendarDay:focus { background: $accent; color: $text; }
     .selected-day { background: $primary; color: $text; text-style: bold; }
-    .has-items { color: $accent-lighten-2; }
-    .todo-done { color: $text-muted; text-style: strike; }
-    .list-header { background: $surface-lighten-1; color: $accent; text-style: bold; height: 1; content-align: center middle; margin: 1 0; }
-    
+
+    .day-row { height: 1; width: 100%; layout: horizontal; }
+    .day-center { height: 1fr; width: 100%; align: center middle; }
+    .day-num { text-style: bold; }
+    .corner-icon { width: 1fr; }
+    .left { text_align: left; } .right { text_align: right; }
+    .red { color: #ff5555; } .blue { color: #8be9fd; } 
+    .yellow { color: #f1fa8c; } .green { color: #50fa7b; }
+
+    .day-center-simple { width: 100%; height: 100%; align: center middle; }
+    .day-num-simple { text-style: bold; }
+    .simple-has-items { background: $accent-darken-2; color: $text-accent; text-style: bold; }
+    .selected-day.simple-has-items { background: $primary; color: $text; }    
+
     /* Dialogs */
     #input-dialog, #om-dialog, #help-dialog, #create-menu { 
         width: 60; height: auto; border: thick $background 80%; background: $surface; padding: 1; 
@@ -590,6 +651,8 @@ class TimeMapApp(App):
     .help-key { text-align: right; color: $secondary; text-style: bold; }
     .help-desc { text-align: left; }
     #close-help { column-span: 2; margin-top: 2; }
+    .list-header { background: $surface-lighten-1; color: $accent; text-style: bold; height: 1; content-align: center middle; margin: 1 0; }
+    .todo-done { color: $text-muted; text-style: strike; }
     """
 
     BINDINGS = [
@@ -612,6 +675,7 @@ class TimeMapApp(App):
         Binding("enter", "focus_list", "Focus List"),
         Binding("N", "show_create_menu", "New Item"),
         Binding("g", "go_day", "Go Day", show=False),
+        Binding("d", "toggle_view", "Toggle View"),
         Binding("G", "go_date", "Go Date", show=False),
     ]
 
@@ -621,6 +685,16 @@ class TimeMapApp(App):
         self.display_year = self.current_date_obj.year
         self.display_month = self.current_date_obj.month
         self.cmd_buffer = ""
+        self.simple_view = False
+
+    def call_from_child(self, clicked_date):
+        self.run_worker(self.change_selected_date(clicked_date))
+
+    def action_toggle_view(self):
+        self.simple_view = not self.simple_view
+        mode_str = "Simple Mode" if self.simple_view else "Detailed Mode"
+        self.notify(f"Switched to {mode_str}")
+        self.run_worker(self.refresh_calendar())
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -890,18 +964,19 @@ class TimeMapApp(App):
             grid.mount(Label(d, classes="day-header"))
 
         cal = calendar.monthcalendar(self.display_year, self.display_month)
-        marked_days = db.get_marked_days(self.display_year, self.display_month)
+        stats = db.get_month_stats(self.display_year, self.display_month)
 
         day_to_focus = None
         for week in cal:
             for day in week:
-                btn = CalendarDay(day, self.display_year,
-                                  self.display_month, (day in marked_days))
+                day_stats = stats.get(day,{})
+                widget = CalendarDay(day,self.display_year,self.display_month,day_stats,self.simple_view)
+
                 if day != 0:
                     if date(self.display_year, self.display_month, day) == self.current_date_obj:
-                        btn.add_class("selected-day")
-                        day_to_focus = btn
-                grid.mount(btn)
+                        widget.add_class("selected-day")
+                        day_to_focus = widget
+                grid.mount(widget)
 
         try:
             if not self.query_one("ActionListView").has_focus and day_to_focus:
