@@ -1,7 +1,7 @@
 import sqlite3
 import os
 import calendar
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 from typing import List, Tuple, Set
 
 DB_PATH = os.path.expanduser("~/.local/share/timemap.db")
@@ -153,3 +153,16 @@ def get_marked_days(year: int, month: int) -> Set[int]:
             continue
     conn.close()
     return marked_days
+
+
+def get_all_entries():
+    """
+    Fetches all items for export.
+    Returns list of tuples: (type, date, alias, content, mood)
+    """
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT type, date, alias, content, mood FROM items ORDER BY date")
+    rows = c.fetchall()
+    conn.close()
+    return rows

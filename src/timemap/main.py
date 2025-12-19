@@ -1,9 +1,11 @@
 import typer
 import sys
 import os
-from . import db, tui, config
+from . import db, tui, config, output
 
 app = typer.Typer()
+
+app.add_typer(output.app, name="output")
 
 
 @app.command()
