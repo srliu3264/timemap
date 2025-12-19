@@ -450,8 +450,8 @@ class HeaderItem(ListItem):
 
 class ActionListView(ListView):
     BINDINGS = [
-        Binding("o", "open_default", "Open"),
-        Binding("O", "open_custom", "Open With"),
+        Binding("o", "open_default", "Open / Details"),
+        Binding("O", "open_custom", "Open With / Links"),
         Binding("n", "rename_item", "Rename"),
         Binding("r", "remove_item", "Remove"),
         Binding("e", "edit_item", "Edit"),
@@ -466,11 +466,35 @@ class ActionListView(ListView):
     def action_unfocus_list(self): self.app.action_focus_calendar()
 
     def action_open_default(self):
+        """
+        'o' key:
+        - Todo: Show Details (Text)
+        - Note/Diary: Show Details (via smart_open)
+        - File: Open File (via smart_open)
+        """
         item = self.highlighted_child
         if isinstance(item, DetailItem):
-            self.app.action_smart_open(item)
+            if item.type == 'todo':
+                # Force Details View for Todo
+                self.app.push_screen(TextDetailScreen(
+                    "Todo Details", item.content))
+            else:
+                # Default behavior for others
+                self.app.action_smart_open(item)
 
-    def action_open_custom(self): self.app.action_open_custom()
+    def action_open_custom(self):
+        """
+        'O' key:
+        - Todo: Follow Link (via smart_open logic)
+        - File: Show 'Open With' Menu
+        """
+        item = self.highlighted_child
+        if isinstance(item, DetailItem) and item.type == 'todo':
+            # Use smart_open to trigger the link opening logic
+            self.app.action_smart_open(item)
+        else:
+            # Show "Open With" menu for files
+            self.app.action_open_custom()
 
     def action_rename_item(self):
         item = self.highlighted_child
