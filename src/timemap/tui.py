@@ -414,20 +414,20 @@ class DetailItem(ListItem):
         should_strike = False
 
         if type == 'file':
-            icon = "📁"
+            icon = ""
             if not alias:
                 display_text = os.path.basename(content)
         elif type == 'note':
-            icon = "📝"
+            icon = "󰏪"
             display_text = content
         elif type == 'diary':
-            icon = "📔"
+            icon = ""
             if not alias:
                 display_text = f"{date_str} Diary"
         elif type == 'todo':
             display_text = content
             if is_done:
-                icon = "✅"
+                icon = ""
                 should_strike = True
                 if finish_date:
                     try:
@@ -436,7 +436,7 @@ class DetailItem(ListItem):
                     except ValueError:
                         pass
             else:
-                icon = "⬜"
+                icon = "󰆢"
 
         super().__init__(Label(f"{icon} {display_text}"))
         if should_strike:
@@ -564,7 +564,7 @@ class CalendarDay(Vertical):
         # Top Left: Heart (Diary) | Top Right: Check+Count (Todo)
         diary_icon = "♥" if self.stats.get('diary', 0) > 0 else " "
         todo_count = self.stats.get('todo', 0)
-        todo_str = f"☑{todo_count}" if todo_count > 0 else " "
+        todo_str = f"{todo_count}" if todo_count > 0 else " "
 
         yield Horizontal(
             Label(diary_icon, classes="corner-icon left red"),
@@ -577,10 +577,11 @@ class CalendarDay(Vertical):
 
         # Bottom Left: File+Count | Bottom Right: Note Icon+Count
         file_count = self.stats.get('file', 0)
-        file_str = f"📁{file_count}" if file_count > 0 else " "
+        file_str = f"{file_count}" if file_count > 0 else " "
 
         note_count = self.stats.get('note', 0)
-        note_str = f"📝{note_count}" if note_count > 0 else " "
+        note_str = f"󰏪{note_count}" if note_count > 0 else " "
+    
 
         yield Horizontal(
             Label(file_str, classes="corner-icon left yellow"),
