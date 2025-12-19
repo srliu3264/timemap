@@ -231,9 +231,9 @@ class DiaryEditScreen(ModalScreen):
         ("󱕼 Sick", "󱕼"),
         ("󰱸 Wink", "󰱸"),
         ("󰽌 Frown", "󰽌"),
-        ("󰱮 exhausted", "󰱮"),
+        ("󰱮 Exhausted", "󰱮"),
         ("󰱫 Cool", "󰱫"),
-        ("🌧 Rainy", "🌧"),
+        ("🌧Rainy", "🌧"),
         (" Cloudy", ""),
         ("❄ Snowy", "❄"),
         ("☀ Sunny", "☀"),
@@ -385,7 +385,15 @@ class OpenMethodScreen(ModalScreen):
 
 class HelpScreen(ModalScreen):
     BINDINGS = [Binding("?", "close_help", "Close"),
-                Binding("escape", "close_help", "Close")]
+                Binding("escape", "close_help", "Close"),
+                Binding("j", "scroll_down", "Scroll Down", show=False),
+                Binding("k", "scroll_up", "Scroll Up", show=False)]
+
+    def action_scroll_down(self):
+        self.query_one("#help-scroll").scroll_down()
+
+    def action_scroll_up(self):
+        self.query_one("#help-scroll").scroll_up()
 
     def compose(self) -> ComposeResult:
         yield Container(
@@ -438,7 +446,7 @@ class HelpScreen(ModalScreen):
                     Label(
                         r"\[N]ote", classes="help-key"), Label("Quick Notes (content)", classes="help-desc"),
                     Label(
-                         r"\[T]odo", classes="help-key"), Label("Todo List (checkbox + content)", classes="help-desc"),
+                        r"\[T]odo", classes="help-key"), Label("Todo List (checkbox + content)", classes="help-desc"),
                     Label(
                         r"\[D]iary", classes="help-key"), Label("Diary (title + mood + content)", classes="help-desc"),
                     classes="help-grid"
@@ -1181,10 +1189,10 @@ class TimeMapApp(App):
     async def action_jump_today(
         self): await self.change_selected_date(date.today())
 
-    async def action_jump_prev(self): 
+    async def action_jump_prev(self):
         await self.change_selected_date(date.today() - timedelta(days=1))
 
-    async def action_jump_next(self): 
+    async def action_jump_next(self):
         await self.change_selected_date(date.today() + timedelta(days=1))
 
     async def action_prev_month(self):
