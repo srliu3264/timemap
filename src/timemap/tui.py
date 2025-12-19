@@ -461,6 +461,11 @@ class ActionListView(ListView):
         Binding("h", "unfocus_list", "Back to Cal", show=False),
         Binding("v", "unfocus_list", "Back to Cal", show=False),
         Binding("escape", "unfocus_list", "Back to Cal", show=False),
+
+        Binding("q", "quit", "Quit", show=False),
+        Binding("?", "show_help", "Help", show=False),
+        # Binding("N", "show_create_menu", "New", show=False),
+        Binding("d", "toggle_view", "Toggle", show=False),
     ]
 
     def action_unfocus_list(self): self.app.action_focus_calendar()
