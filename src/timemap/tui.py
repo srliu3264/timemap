@@ -42,6 +42,16 @@ def get_terminal_cmd():
 class CreateMenuScreen(ModalScreen):
     """Menu to choose what to create."""
 
+    # NEW: Number keys 1-4 to select options
+    BINDINGS = [
+        Binding("1", "select_file", "File"),
+        Binding("2", "select_note", "Note"),
+        Binding("3", "select_todo", "Todo"),
+        Binding("4", "select_diary", "Diary"),
+        Binding("escape", "cancel", "Cancel"),
+        Binding("q", "cancel", "Cancel"),
+    ]
+
     def compose(self) -> ComposeResult:
         yield Grid(
             Label("Create New Item", id="create-title"),
@@ -52,6 +62,13 @@ class CreateMenuScreen(ModalScreen):
             Button("Cancel", id="btn-cancel"),
             id="create-menu"
         )
+
+    # Key Handlers
+    def action_select_file(self): self.dismiss("file")
+    def action_select_note(self): self.dismiss("note")
+    def action_select_todo(self): self.dismiss("todo")
+    def action_select_diary(self): self.dismiss("diary")
+    def action_cancel(self): self.dismiss(None)
 
     @on(Button.Pressed)
     def on_click(self, event):
@@ -70,6 +87,12 @@ class CreateMenuScreen(ModalScreen):
 
 class FileAutocompleteScreen(ModalScreen):
     """Input screen with path autocomplete hints."""
+
+    # SAFE BINDINGS: Ctrl+s to save, Esc to cancel
+    BINDINGS = [
+        Binding("ctrl+s", "save", "Save"),
+        Binding("escape", "cancel", "Cancel"),
+    ]
 
     def __init__(self):
         super().__init__()
@@ -102,10 +125,8 @@ class FileAutocompleteScreen(ModalScreen):
         list_view = self.query_one("#file-suggestions", ListView)
         list_view.clear()
 
-        # Expand ~ to user home
         expanded_path = os.path.expanduser(typed_value)
 
-        # Determine directory to search
         if os.path.isdir(expanded_path) and typed_value.endswith('/'):
             search_dir = expanded_path
             partial = ""
@@ -118,7 +139,6 @@ class FileAutocompleteScreen(ModalScreen):
 
         try:
             items = sorted(os.listdir(search_dir))
-            # Filter by partial match
             matches = [i for i in items if i.startswith(
                 partial) and not i.startswith('.')]
 
@@ -126,35 +146,41 @@ class FileAutocompleteScreen(ModalScreen):
                 full = os.path.join(search_dir, m)
                 display = m + ("/" if os.path.isdir(full) else "")
                 list_view.append(ListItem(Label(display), name=full))
-
         except PermissionError:
             pass
 
     @on(ListView.Selected, "#file-suggestions")
     def on_suggestion_select(self, event):
-        # When list item selected, update input
         full_path = event.item.name
         input_box = self.query_one("#file-input", Input)
-
         if os.path.isdir(full_path) and not full_path.endswith('/'):
             full_path += "/"
-
         input_box.value = full_path
         input_box.focus()
-        # Move cursor to end
         input_box.action_end()
 
-    @on(Button.Pressed, "#btn-add")
-    def on_add(self):
+    def action_save(self):
         path = self.query_one("#file-input").value
         self.dismiss(path)
 
+    def action_cancel(self):
+        self.dismiss(None)
+
+    @on(Button.Pressed, "#btn-add")
+    def on_add(self): self.action_save()
+
     @on(Button.Pressed, "#btn-cancel")
-    def on_cancel(self): self.dismiss(None)
+    def on_cancel_btn(self): self.action_cancel()
 
 
 class NoteEditScreen(ModalScreen):
     """Simple multi-line note editor."""
+
+    # SAFE BINDINGS: Ctrl+s to save, Esc to cancel
+    BINDINGS = [
+        Binding("ctrl+s", "save", "Save"),
+        Binding("escape", "cancel", "Cancel"),
+    ]
 
     def __init__(self, content=""):
         super().__init__()
@@ -174,17 +200,28 @@ class NoteEditScreen(ModalScreen):
 
     def on_mount(self): self.query_one(TextArea).focus()
 
-    @on(Button.Pressed, "#btn-save")
-    def on_save(self):
+    def action_save(self):
         text = self.query_one(TextArea).text
         self.dismiss(text)
 
+    def action_cancel(self):
+        self.dismiss(None)
+
+    @on(Button.Pressed, "#btn-save")
+    def on_save_btn(self): self.action_save()
+
     @on(Button.Pressed, "#btn-cancel")
-    def on_cancel(self): self.dismiss(None)
+    def on_cancel_btn(self): self.action_cancel()
 
 
 class DiaryEditScreen(ModalScreen):
     """Screen to edit Title, Mood, and multi-line Content."""
+
+    # SAFE BINDINGS: Ctrl+s to save, Esc to cancel
+    BINDINGS = [
+        Binding("ctrl+s", "save", "Save"),
+        Binding("escape", "cancel", "Cancel"),
+    ]
 
     def __init__(self, title: str, mood: str, content: str):
         super().__init__()
@@ -214,19 +251,25 @@ class DiaryEditScreen(ModalScreen):
     def on_mount(self):
         self.query_one("#input-title").focus()
 
-    @on(Button.Pressed, "#btn-save")
-    def on_save(self):
+    def action_save(self):
         title = self.query_one("#input-title", Input).value
         mood = self.query_one("#input-mood", Input).value
         content = self.query_one("#input-content", TextArea).text
         self.dismiss({"title": title, "mood": mood, "content": content})
 
-    @on(Button.Pressed, "#btn-cancel")
-    def on_cancel(self):
+    def action_cancel(self):
         self.dismiss(None)
+
+    @on(Button.Pressed, "#btn-save")
+    def on_save_btn(self): self.action_save()
+
+    @on(Button.Pressed, "#btn-cancel")
+    def on_cancel_btn(self): self.action_cancel()
 
 
 class TextDetailScreen(ModalScreen):
+    BINDINGS = [Binding("escape", "close", "Close")]
+
     def __init__(self, title: str, content: str, meta_info: str = ""):
         super().__init__()
         self.item_title = title
@@ -245,11 +288,18 @@ class TextDetailScreen(ModalScreen):
             id="detail-dialog"
         )
 
+    def action_close(self): self.dismiss()
     @on(Button.Pressed, "#btn-close")
-    def on_close(self): self.dismiss()
+    def on_close_btn(self): self.dismiss()
 
 
 class InputScreen(ModalScreen):
+    # SAFE BINDINGS: Ctrl+s to save, Esc to cancel
+    BINDINGS = [
+        Binding("ctrl+s", "save", "Save"),
+        Binding("escape", "cancel", "Cancel"),
+    ]
+
     def __init__(self, prompt: str, initial_value: str = ""):
         super().__init__()
         self.prompt_text = prompt
@@ -265,12 +315,16 @@ class InputScreen(ModalScreen):
         )
 
     def on_mount(self): self.query_one(Input).focus()
+
+    def action_save(self): self.dismiss(self.query_one(Input).value)
+    def action_cancel(self): self.dismiss(None)
+
     @on(Button.Pressed, "#btn-ok")
-    def on_ok(self): self.dismiss(self.query_one(Input).value)
+    def on_ok(self): self.action_save()
     @on(Button.Pressed, "#btn-cancel")
-    def on_cancel(self): self.dismiss(None)
+    def on_cancel_btn(self): self.action_cancel()
     @on(Input.Submitted)
-    def on_submit(self): self.on_ok()
+    def on_submit(self): self.action_save()
 
 
 class OpenMethodScreen(ModalScreen):
@@ -327,14 +381,12 @@ class HelpScreen(ModalScreen):
             Label("Actions", classes="help-header"),
             Label("N (Shift+n)", classes="help-key"), Label("New Item Menu",
                                                             classes="help-desc"),
-            Label("v / Enter", classes="help-key"), Label("View List / Item",
-                                                          classes="help-desc"),
-            Label("o", classes="help-key"),       Label("Open Item",
-                                                        classes="help-desc"),
-            Label("r", classes="help-key"),       Label("Remove Item",
-                                                        classes="help-desc"),
-            Label("e", classes="help-key"),       Label("Edit Item",
-                                                        classes="help-desc"),
+            Label("1 / 2 / 3 / 4", classes="help-key"), Label("Select from Menu",
+                                                              classes="help-desc"),
+            Label("Ctrl+s", classes="help-key"),      Label("Save Item",
+                                                            classes="help-desc"),
+            Label("Esc", classes="help-key"),         Label("Cancel",
+                                                            classes="help-desc"),
 
             Button("Close", variant="primary", id="close-help"),
             id="help-dialog"
@@ -534,7 +586,7 @@ class TimeMapApp(App):
         # Actions
         Binding("v", "focus_list", "Focus List"),
         Binding("enter", "focus_list", "Focus List"),
-        Binding("N", "show_create_menu", "New Item"),  # Capital N
+        Binding("N", "show_create_menu", "New Item"),
         Binding("g", "go_day", "Go Day", show=False),
         Binding("G", "go_date", "Go Date", show=False),
     ]
@@ -639,9 +691,6 @@ class TimeMapApp(App):
 
     def create_todo_item(self, content):
         if content:
-            # Todo items generally default to 'today' or the selected date?
-            # Logic: Todo is usually global or associated with creation date.
-            # Your db.add_item handles date_str. Let's use selected date.
             db.add_item("todo", content, self.current_date_obj.isoformat())
             self.notify("Todo added")
             self.refresh_ui()
