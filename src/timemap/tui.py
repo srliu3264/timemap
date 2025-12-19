@@ -1,6 +1,6 @@
 from textual.app import App, ComposeResult
 from textual.containers import Grid, Vertical, Horizontal, Container, ScrollableContainer
-from textual.widgets import Header, Footer, Button, Label, ListView, ListItem, Input, TextArea
+from textual.widgets import Header, Footer, Button, Label, ListView, ListItem, Input, TextArea, Select
 from textual.screen import ModalScreen
 from textual.binding import Binding
 from textual import on, events, work
@@ -223,10 +223,28 @@ class DiaryEditScreen(ModalScreen):
         Binding("escape", "cancel", "Cancel"),
     ]
 
+    MOOD_OPTIONS = [
+        ("󰱰 Happy", "󰱰"),
+        ("󰱬 Sad", "󰱬"),
+        ("󱃞 Neutral", "󱃞"),
+        ("󰱩 Angry", "󰱩"),
+        ("󱕼 Sick", "󱕼"),
+        ("󰱸 Wink", "󰱸"),
+        ("󰽌 Frown", "󰽌"),
+        ("󰱮 exhausted", "󰱮"),
+        ("󰱫 Cool", "󰱫"),
+        ("🌧 Rainy", "🌧"),
+        (" Cloudy", ""),
+        ("❄ Snowy", "❄"),
+        ("☀ Sunny", "☀"),
+        ("󰱯 Mysterious", "󰱯")
+    ]
+
     def __init__(self, title: str, mood: str, content: str):
         super().__init__()
         self.initial_title = title
-        self.initial_mood = mood or ""
+        valid_moods = [m[1] for m in self.MOOD_OPTIONS]
+        self.initial_mood = mood if mood in valid_moods else Select.BLANK
         self.initial_content = content
 
     def compose(self) -> ComposeResult:
@@ -236,8 +254,7 @@ class DiaryEditScreen(ModalScreen):
             Input(self.initial_title, id="input-title",
                   placeholder="Entry Title"),
             Label("Mood", classes="field-label"),
-            Input(self.initial_mood, id="input-mood",
-                  placeholder="How are you feeling?"),
+            Select(self.MOOD_OPTIONS, value=self.initial_mood, id="input-mood", prompt="Select Mood..."),
             Label("Content", classes="field-label"),
             TextArea(self.initial_content, id="input-content"),
             Horizontal(
@@ -253,7 +270,8 @@ class DiaryEditScreen(ModalScreen):
 
     def action_save(self):
         title = self.query_one("#input-title", Input).value
-        mood = self.query_one("#input-mood", Input).value
+        mood = self.query_one("#input-mood").value
+        if mood == Select.BLANK: mood = "󱃞"
         content = self.query_one("#input-content", TextArea).text
         self.dismiss({"title": title, "mood": mood, "content": content})
 
@@ -544,7 +562,14 @@ class CalendarDay(Vertical):
             self.disabled = True
             self.add_class("empty-day")
 
-        self.has_items = sum(stats.values()) > 0
+        count_sum = (
+            stats.get('diary', 0) + 
+            stats.get('file', 0) + 
+            stats.get('todo', 0) + 
+            stats.get('note', 0)
+        )
+        self.has_items = count_sum > 0
+
         if self.simple_mode and self.has_items and day_num > 0:
             self.add_class("simple-has-items")
 
@@ -552,7 +577,6 @@ class CalendarDay(Vertical):
         if self.day_num == 0:
             return
 
-        # --- MODE 1: SIMPLE VIEW ---
         if self.simple_mode:
             yield Container(
                 Label(str(self.day_num), classes="day-num-simple"),
@@ -560,9 +584,13 @@ class CalendarDay(Vertical):
             )
             return
 
-        # --- MODE 2: DETAILED VIEW (4 Corners) ---
-        # Top Left: Heart (Diary) | Top Right: Check+Count (Todo)
-        diary_icon = "♥" if self.stats.get('diary', 0) > 0 else " "
+        has_diary = self.stats.get('diary', 0) > 0
+        if has_diary:
+            # Use the specific mood if set, otherwise default to Nerd Font Book
+            diary_icon = self.stats.get('diary_mood') or ""
+        else:
+            diary_icon = " "
+
         todo_count = self.stats.get('todo', 0)
         todo_str = f"{todo_count}" if todo_count > 0 else " "
 
@@ -581,7 +609,6 @@ class CalendarDay(Vertical):
 
         note_count = self.stats.get('note', 0)
         note_str = f"󰏪{note_count}" if note_count > 0 else " "
-    
 
         yield Horizontal(
             Label(file_str, classes="corner-icon left yellow"),
@@ -617,7 +644,7 @@ class TimeMapApp(App):
     .day-num { text-style: bold; }
     .corner-icon { width: 1fr; }
     .left { text_align: left; } .right { text_align: right; }
-    .red { color: #ff5555; } .blue { color: #8be9fd; } 
+    .red { color: #f8c8dc; } .blue { color: #8be9fd; } 
     .yellow { color: #f1fa8c; } .green { color: #50fa7b; }
 
     .day-center-simple { width: 100%; height: 100%; align: center middle; }

@@ -13,7 +13,7 @@ def get_db():
     c = conn.cursor()
 
     c.execute('''CREATE TABLE IF NOT EXISTS items
-                 (id INTEGER PRIMARY KEY, date TEXT, type TEXT, content TEXT, 
+                 (id INTEGER PRIMARY KEY, date TEXT, type TEXT, content TEXT,
                   is_done INTEGER DEFAULT 0, finish_date TEXT, alias TEXT, mood TEXT)''')
 
     # MIGRATIONS
@@ -50,9 +50,9 @@ def get_items_for_date(target_date: str) -> List[Tuple]:
     items = c.fetchall()
 
     c.execute("""
-        SELECT id, type, content, is_done, finish_date, alias, mood FROM items 
-        WHERE type = 'todo' 
-          AND date <= ? 
+        SELECT id, type, content, is_done, finish_date, alias, mood FROM items
+        WHERE type = 'todo'
+          AND date <= ?
           AND (is_done = 0 OR finish_date >= ?)
     """, (target_date, target_date))
 
@@ -176,16 +176,14 @@ def get_month_stats(year: int, month: int) -> dict:
     c = conn.cursor()
     stats = {}
 
-    # Initialize all days in month
     _, last_day = calendar.monthrange(year, month)
     for d in range(1, last_day + 1):
         stats[d] = {'diary': 0, 'file': 0, 'todo': 0, 'note': 0}
 
-    # 1. Count Point Events (Diary, File, Note)
     search_pattern = f"{year}-{month:02d}-%"
     c.execute("""
-        SELECT date, type, count(*) 
-        FROM items 
+        SELECT date, type, count(*)
+        FROM items
         WHERE type IN ('diary', 'file', 'note') AND date LIKE ?
         GROUP BY date, type
     """, (search_pattern,))
@@ -198,11 +196,18 @@ def get_month_stats(year: int, month: int) -> dict:
         except ValueError:
             pass
 
-    # 2. Count Todos (Ranges)
+    c.execute(
+        "SELECT date, mood FROM items WHERE type='diary' AND date LIKE ?", (search_pattern,))
+    for date_str, mood in c.fetchall():
+        try:
+            d_obj = date.fromisoformat(date_str)
+            if d_obj.day in stats and mood:
+                stats[d_obj.day]['diary_mood'] = mood
+        except ValueError:
+            pass
     month_start = date(year, month, 1)
     month_end = date(year, month, last_day)
 
-    # Fetch todos that exist before month end
     c.execute("SELECT date, finish_date, is_done FROM items WHERE type = 'todo' AND date <= ?",
               (month_end.isoformat(),))
 
@@ -212,7 +217,6 @@ def get_month_stats(year: int, month: int) -> dict:
             finish_date = date.fromisoformat(finish_str) if (
                 is_done and finish_str) else None
 
-            # Intersection logic
             start = max(create_date, month_start)
             end = min(finish_date, month_end) if finish_date else month_end
 
