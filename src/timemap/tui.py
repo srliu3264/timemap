@@ -3,13 +3,14 @@ from textual.containers import Grid, Vertical, Horizontal, Container, Scrollable
 from textual.widgets import Header, Footer, Button, Label, ListView, ListItem, Input, TextArea
 from textual.screen import ModalScreen
 from textual.binding import Binding
-from textual import on, events
+from textual import on, events, work
 import calendar
 from datetime import date, timedelta, datetime
 import subprocess
 import os
 import re
 import shutil
+from pathlib import Path
 
 from . import db, config
 
@@ -38,8 +39,152 @@ def get_terminal_cmd():
 # --- MODAL SCREENS ---
 
 
+class CreateMenuScreen(ModalScreen):
+    """Menu to choose what to create."""
+
+    def compose(self) -> ComposeResult:
+        yield Grid(
+            Label("Create New Item", id="create-title"),
+            Button("1. Add File", id="btn-file", variant="primary"),
+            Button("2. Add Note", id="btn-note", variant="success"),
+            Button("3. Add Todo", id="btn-todo", variant="warning"),
+            Button("4. Add Diary", id="btn-diary", variant="error"),
+            Button("Cancel", id="btn-cancel"),
+            id="create-menu"
+        )
+
+    @on(Button.Pressed)
+    def on_click(self, event):
+        bid = event.button.id
+        if bid == "btn-file":
+            self.dismiss("file")
+        elif bid == "btn-note":
+            self.dismiss("note")
+        elif bid == "btn-todo":
+            self.dismiss("todo")
+        elif bid == "btn-diary":
+            self.dismiss("diary")
+        else:
+            self.dismiss(None)
+
+
+class FileAutocompleteScreen(ModalScreen):
+    """Input screen with path autocomplete hints."""
+
+    def __init__(self):
+        super().__init__()
+        self.current_path = os.getcwd()
+
+    def compose(self) -> ComposeResult:
+        yield Container(
+            Label("Enter File Path:", classes="field-label"),
+            Input(self.current_path + "/", id="file-input"),
+            Label("Suggestions (Select to auto-complete):",
+                  classes="field-label"),
+            ListView(id="file-suggestions"),
+            Horizontal(
+                Button("Cancel", id="btn-cancel"),
+                Button("Add", variant="primary", id="btn-add"),
+                classes="dialog-buttons"
+            ),
+            id="file-dialog"
+        )
+
+    def on_mount(self):
+        self.query_one("#file-input").focus()
+        self.update_suggestions(self.query_one("#file-input").value)
+
+    @on(Input.Changed, "#file-input")
+    def on_input_change(self, event):
+        self.update_suggestions(event.value)
+
+    def update_suggestions(self, typed_value):
+        list_view = self.query_one("#file-suggestions", ListView)
+        list_view.clear()
+
+        # Expand ~ to user home
+        expanded_path = os.path.expanduser(typed_value)
+
+        # Determine directory to search
+        if os.path.isdir(expanded_path) and typed_value.endswith('/'):
+            search_dir = expanded_path
+            partial = ""
+        else:
+            search_dir = os.path.dirname(expanded_path)
+            partial = os.path.basename(expanded_path)
+
+        if not os.path.exists(search_dir):
+            return
+
+        try:
+            items = sorted(os.listdir(search_dir))
+            # Filter by partial match
+            matches = [i for i in items if i.startswith(
+                partial) and not i.startswith('.')]
+
+            for m in matches:
+                full = os.path.join(search_dir, m)
+                display = m + ("/" if os.path.isdir(full) else "")
+                list_view.append(ListItem(Label(display), name=full))
+
+        except PermissionError:
+            pass
+
+    @on(ListView.Selected, "#file-suggestions")
+    def on_suggestion_select(self, event):
+        # When list item selected, update input
+        full_path = event.item.name
+        input_box = self.query_one("#file-input", Input)
+
+        if os.path.isdir(full_path) and not full_path.endswith('/'):
+            full_path += "/"
+
+        input_box.value = full_path
+        input_box.focus()
+        # Move cursor to end
+        input_box.action_end()
+
+    @on(Button.Pressed, "#btn-add")
+    def on_add(self):
+        path = self.query_one("#file-input").value
+        self.dismiss(path)
+
+    @on(Button.Pressed, "#btn-cancel")
+    def on_cancel(self): self.dismiss(None)
+
+
+class NoteEditScreen(ModalScreen):
+    """Simple multi-line note editor."""
+
+    def __init__(self, content=""):
+        super().__init__()
+        self.content = content
+
+    def compose(self) -> ComposeResult:
+        yield Container(
+            Label("New Note", id="note-header"),
+            TextArea(self.content, id="note-content"),
+            Horizontal(
+                Button("Cancel", id="btn-cancel"),
+                Button("Save", variant="primary", id="btn-save"),
+                classes="dialog-buttons"
+            ),
+            id="note-dialog"
+        )
+
+    def on_mount(self): self.query_one(TextArea).focus()
+
+    @on(Button.Pressed, "#btn-save")
+    def on_save(self):
+        text = self.query_one(TextArea).text
+        self.dismiss(text)
+
+    @on(Button.Pressed, "#btn-cancel")
+    def on_cancel(self): self.dismiss(None)
+
+
 class DiaryEditScreen(ModalScreen):
-    """A better looking screen to edit Title, Mood, and multi-line Content."""
+    """Screen to edit Title, Mood, and multi-line Content."""
 
     def __init__(self, title: str, mood: str, content: str):
         super().__init__()
@@ -50,22 +195,14 @@ class DiaryEditScreen(ModalScreen):
     def compose(self) -> ComposeResult:
         yield Container(
             Label("Edit Diary Entry", id="edit-header"),
-
-            # Title Section
             Label("Title", classes="field-label"),
             Input(self.initial_title, id="input-title",
                   placeholder="Entry Title"),
-
-            # Mood Section
             Label("Mood", classes="field-label"),
             Input(self.initial_mood, id="input-mood",
                   placeholder="How are you feeling?"),
-
-            # Content Section (TextArea for multi-line)
             Label("Content", classes="field-label"),
-            TextArea(self.initial_content, id="input-content", language=None),
-
-            # Buttons
+            TextArea(self.initial_content, id="input-content"),
             Horizontal(
                 Button("Cancel", id="btn-cancel"),
                 Button("Save", variant="primary", id="btn-save"),
@@ -81,7 +218,6 @@ class DiaryEditScreen(ModalScreen):
     def on_save(self):
         title = self.query_one("#input-title", Input).value
         mood = self.query_one("#input-mood", Input).value
-        # TextArea uses .text, not .value
         content = self.query_one("#input-content", TextArea).text
         self.dismiss({"title": title, "mood": mood, "content": content})
 
@@ -91,8 +227,6 @@ class DiaryEditScreen(ModalScreen):
 
 
 class TextDetailScreen(ModalScreen):
-    """Screen to view full details of a Note or Diary."""
-
     def __init__(self, title: str, content: str, meta_info: str = ""):
         super().__init__()
         self.item_title = title
@@ -103,7 +237,6 @@ class TextDetailScreen(ModalScreen):
         yield Container(
             Label(self.item_title, id="detail-title"),
             Label(self.meta_info, id="detail-meta") if self.meta_info else Label(""),
-            # Scrollable container for long text
             ScrollableContainer(
                 Label(self.item_content, id="detail-content"),
                 id="detail-scroll"
@@ -183,29 +316,26 @@ class HelpScreen(ModalScreen):
     def compose(self) -> ComposeResult:
         yield Grid(
             Label("TimeMap Help", id="help-title"),
-            Label("Global", classes="help-header"),
-            Label("v / Enter", classes="help-key"), Label("Switch Focus",
+            Label("Navigation", classes="help-header"),
+            Label("h j k l", classes="help-key"), Label("Move Calendar",
+                                                        classes="help-desc"),
+            Label("g", classes="help-key"),       Label("Go to Day (type number)",
+                                                        classes="help-desc"),
+            Label("G", classes="help-key"),       Label("Go to Date (MM-DD-YYYY)",
+                                                        classes="help-desc"),
+
+            Label("Actions", classes="help-header"),
+            Label("N (Shift+n)", classes="help-key"), Label("New Item Menu",
+                                                            classes="help-desc"),
+            Label("v / Enter", classes="help-key"), Label("View List / Item",
                                                           classes="help-desc"),
-            Label("q", classes="help-key"),       Label("Quit",
+            Label("o", classes="help-key"),       Label("Open Item",
                                                         classes="help-desc"),
-            Label("Calendar Mode", classes="help-header"),
-            Label("h j k l", classes="help-key"), Label("Navigate Date",
+            Label("r", classes="help-key"),       Label("Remove Item",
                                                         classes="help-desc"),
-            Label("1-31 + g", classes="help-key"), Label("Go to Day",
-                                                         classes="help-desc"),
-            Label("date + G", classes="help-key"), Label("Go to Date",
-                                                         classes="help-desc"),
-            Label("List Mode", classes="help-header"),
-            Label("j / k", classes="help-key"),   Label("Navigate Items",
+            Label("e", classes="help-key"),       Label("Edit Item",
                                                         classes="help-desc"),
-            Label("o", classes="help-key"),       Label("Open / Details",
-                                                        classes="help-desc"),
-            Label("O", classes="help-key"),       Label("Open With...",
-                                                        classes="help-desc"),
-            Label("r / e", classes="help-key"),   Label("Remove / Edit",
-                                                        classes="help-desc"),
-            Label("n", classes="help-key"),       Label("Rename Alias",
-                                                        classes="help-desc"),
+
             Button("Close", variant="primary", id="close-help"),
             id="help-dialog"
         )
@@ -352,28 +482,25 @@ class TimeMapApp(App):
     .todo-done { color: $text-muted; text-style: strike; }
     .list-header { background: $surface-lighten-1; color: $accent; text-style: bold; height: 1; content-align: center middle; margin: 1 0; }
     
-    #input-dialog, #om-dialog, #help-dialog { 
+    /* Dialogs */
+    #input-dialog, #om-dialog, #help-dialog, #create-menu { 
         width: 60; height: auto; border: thick $background 80%; background: $surface; padding: 1; 
     }
-    
-    /* Diary Edit & Detail Screens */
-    #diary-edit-dialog, #detail-dialog {
-        width: 70%; 
-        height: 80%;
-        border: thick $background 80%; 
-        background: $surface; 
-        padding: 1 2;
+    #file-dialog {
+        width: 80%; height: 70%; border: thick $background 80%; background: $surface; padding: 1;
     }
+    #create-menu { grid-size: 1; grid-gutter: 1; }
+    #create-title { text-style: bold; content-align: center middle; width: 100%; border-bottom: solid $primary; margin-bottom: 1; }
     
-    #edit-header { text-style: bold; border-bottom: solid $primary; width: 100%; content-align: center middle; margin-bottom: 1; }
+    /* Note, Diary, File Logic */
+    #diary-edit-dialog, #detail-dialog, #note-dialog {
+        width: 70%; height: 80%; border: thick $background 80%; background: $surface; padding: 1 2;
+    }
+    #edit-header, #note-header { text-style: bold; border-bottom: solid $primary; width: 100%; content-align: center middle; margin-bottom: 1; }
     .field-label { margin-top: 1; color: $accent; text-style: bold; }
-    
-    #input-content { 
-        height: 1fr; 
-        border: solid $secondary;
-        margin-top: 1;
-    }
-    
+    #input-content, #note-content { height: 1fr; border: solid $secondary; margin-top: 1; }
+    #file-suggestions { height: 1fr; border: solid $secondary; margin-top: 1; background: $surface-lighten-1; }
+
     #detail-scroll { height: 1fr; border: solid $secondary; padding: 1; margin: 1 0; background: $surface-lighten-1; }
     #detail-content { width: 100%; height: auto; }
     #detail-title { text-style: bold; content-align: center middle; width: 100%; border-bottom: solid $primary; padding-bottom: 1; }
@@ -392,7 +519,7 @@ class TimeMapApp(App):
     BINDINGS = [
         Binding("q", "quit", "Quit"),
         Binding("?", "show_help", "Help"),
-        # Cal Nav
+        # Nav
         Binding("h", "move_left", "Left", show=False), Binding(
             "l", "move_right", "Right", show=False),
         Binding("k", "move_up", "Up", show=False), Binding(
@@ -404,10 +531,10 @@ class TimeMapApp(App):
                                                                   "next_month", "+Month", show=False),
         Binding("{", "prev_year", "-Year", show=False), Binding("}",
                                                                 "next_year", "+Year", show=False),
-        # Focus
+        # Actions
         Binding("v", "focus_list", "Focus List"),
         Binding("enter", "focus_list", "Focus List"),
-        # Commands
+        Binding("N", "show_create_menu", "New Item"),  # Capital N
         Binding("g", "go_day", "Go Day", show=False),
         Binding("G", "go_date", "Go Date", show=False),
     ]
@@ -467,6 +594,69 @@ class TimeMapApp(App):
     def update_status(self, msg):
         self.query_one("#status-bar", Label).update(msg)
 
+    # --- ACTION HANDLERS ---
+
+    def action_show_create_menu(self):
+        """Show the new item creation menu."""
+        def handler(choice):
+            if not choice:
+                return
+
+            target_date_str = self.current_date_obj.isoformat()
+
+            if choice == "file":
+                self.push_screen(FileAutocompleteScreen(),
+                                 lambda path: self.create_file_item(path, target_date_str))
+
+            elif choice == "note":
+                self.push_screen(NoteEditScreen(),
+                                 lambda content: self.create_note_item(content, target_date_str))
+
+            elif choice == "todo":
+                self.push_screen(InputScreen("New Todo:"),
+                                 lambda content: self.create_todo_item(content))
+
+            elif choice == "diary":
+                self.push_screen(DiaryEditScreen("", "", ""),
+                                 lambda res: self.create_diary_item(res, target_date_str))
+
+        self.push_screen(CreateMenuScreen(), handler)
+
+    def create_file_item(self, path, date_str):
+        if path and os.path.exists(os.path.expanduser(path)):
+            db.add_item("file", os.path.abspath(
+                os.path.expanduser(path)), date_str)
+            self.notify(f"Linked file to {date_str}")
+            self.refresh_ui()
+        elif path:
+            self.notify("File not found!", severity="error")
+
+    def create_note_item(self, content, date_str):
+        if content:
+            db.add_item("note", content, date_str)
+            self.notify("Note added")
+            self.refresh_ui()
+
+    def create_todo_item(self, content):
+        if content:
+            # Todo items generally default to 'today' or the selected date?
+            # Logic: Todo is usually global or associated with creation date.
+            # Your db.add_item handles date_str. Let's use selected date.
+            db.add_item("todo", content, self.current_date_obj.isoformat())
+            self.notify("Todo added")
+            self.refresh_ui()
+
+    def create_diary_item(self, result, date_str):
+        if result and result.get('content'):
+            db.add_item("diary", result['content'], date_str,
+                        alias=result['title'], mood=result['mood'])
+            self.notify("Diary entry created")
+            self.refresh_ui()
+
+    def refresh_ui(self):
+        self.show_details()
+        self.run_worker(self.refresh_calendar())
+
     async def action_go_day(self):
         if self.cmd_buffer.isdigit():
             day = int(self.cmd_buffer)
@@ -515,8 +705,7 @@ class TimeMapApp(App):
 
     def action_remove_item(self, item):
         db.delete_item(item.item_id)
-        self.show_details()
-        self.run_worker(self.refresh_calendar())
+        self.refresh_ui()
         self.notify("Item removed")
 
     def action_edit_item(self, item):
@@ -527,7 +716,6 @@ class TimeMapApp(App):
                         item.item_id, result['title'], result['mood'], result['content'])
                     self.show_details()
                     self.notify("Diary updated")
-
             current_title = item.alias if item.alias else "Diary"
             self.push_screen(DiaryEditScreen(
                 current_title, item.mood, item.content), callback)
@@ -556,8 +744,7 @@ class TimeMapApp(App):
         db.toggle_todo_status(item.item_id, date_str)
         status = "Done" if not item.is_done else "Undone"
         self.notify(f"Todo {status}")
-        self.show_details()
-        self.run_worker(self.refresh_calendar())
+        self.refresh_ui()
 
     def action_smart_open(self, item):
         if item.type == 'file':
@@ -696,26 +883,26 @@ class TimeMapApp(App):
             await self.refresh_calendar()
         self.show_details()
 
-    async def action_move_left(self):
-        await self.change_selected_date(self.current_date_obj - timedelta(days=1))
+    async def action_move_left(self): await self.change_selected_date(
+        self.current_date_obj - timedelta(days=1))
 
-    async def action_move_right(self):
-        await self.change_selected_date(self.current_date_obj + timedelta(days=1))
+    async def action_move_right(self): await self.change_selected_date(
+        self.current_date_obj + timedelta(days=1))
 
-    async def action_move_up(self):
-        await self.change_selected_date(self.current_date_obj - timedelta(weeks=1))
+    async def action_move_up(self): await self.change_selected_date(
+        self.current_date_obj - timedelta(weeks=1))
 
-    async def action_move_down(self):
-        await self.change_selected_date(self.current_date_obj + timedelta(weeks=1))
+    async def action_move_down(self): await self.change_selected_date(
+        self.current_date_obj + timedelta(weeks=1))
 
-    async def action_jump_today(self):
-        await self.change_selected_date(date.today())
+    async def action_jump_today(
+        self): await self.change_selected_date(date.today())
 
-    async def action_jump_prev(self):
-        await self.change_selected_date(self.current_date_obj - timedelta(days=1))
+    async def action_jump_prev(self): await self.change_selected_date(
+        self.current_date_obj - timedelta(days=1))
 
-    async def action_jump_next(self):
-        await self.change_selected_date(self.current_date_obj + timedelta(days=1))
+    async def action_jump_next(self): await self.change_selected_date(
+        self.current_date_obj + timedelta(days=1))
 
     async def action_prev_month(self):
         if self.display_month == 1:
