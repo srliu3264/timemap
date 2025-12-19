@@ -1,5 +1,5 @@
 from textual.app import App, ComposeResult
-from textual.containers import Grid, Vertical, Horizontal, Container, ScrollableContainer
+from textual.containers import Grid, Vertical, Horizontal, Container, ScrollableContainer, VerticalScroll
 from textual.widgets import Header, Footer, Button, Label, ListView, ListItem, Input, TextArea, Select
 from textual.screen import ModalScreen
 from textual.binding import Binding
@@ -254,7 +254,8 @@ class DiaryEditScreen(ModalScreen):
             Input(self.initial_title, id="input-title",
                   placeholder="Entry Title"),
             Label("Mood", classes="field-label"),
-            Select(self.MOOD_OPTIONS, value=self.initial_mood, id="input-mood", prompt="Select Mood..."),
+            Select(self.MOOD_OPTIONS, value=self.initial_mood,
+                   id="input-mood", prompt="Select Mood..."),
             Label("Content", classes="field-label"),
             TextArea(self.initial_content, id="input-content"),
             Horizontal(
@@ -271,7 +272,8 @@ class DiaryEditScreen(ModalScreen):
     def action_save(self):
         title = self.query_one("#input-title", Input).value
         mood = self.query_one("#input-mood").value
-        if mood == Select.BLANK: mood = "󱃞"
+        if mood == Select.BLANK:
+            mood = "󱃞"
         content = self.query_one("#input-content", TextArea).text
         self.dismiss({"title": title, "mood": mood, "content": content})
 
@@ -386,34 +388,87 @@ class HelpScreen(ModalScreen):
                 Binding("escape", "close_help", "Close")]
 
     def compose(self) -> ComposeResult:
-        yield Grid(
+        yield Container(
             Label("TimeMap Help", id="help-title"),
-            Label("Navigation", classes="help-header"),
-            Label("h j k l", classes="help-key"), Label("Move Calendar",
-                                                        classes="help-desc"),
-            Label("g", classes="help-key"),       Label("Go to Day (type number)",
-                                                        classes="help-desc"),
-            Label("G", classes="help-key"),       Label("Go to Date (MM-DD-YYYY)",
-                                                        classes="help-desc"),
 
-            Label("Actions", classes="help-header"),
-            Label("N (Shift+n)", classes="help-key"), Label("New Item Menu",
-                                                            classes="help-desc"),
-            Label("1 / 2 / 3 / 4", classes="help-key"), Label("Select from Menu",
-                                                              classes="help-desc"),
-            Label("Ctrl+s", classes="help-key"),      Label("Save Item",
-                                                            classes="help-desc"),
-            Label("Esc", classes="help-key"),         Label("Cancel",
-                                                            classes="help-desc"),
+            VerticalScroll(
+                Label("Navigation", classes="help-section-title"),
+                Grid(
+                    Label(
+                        "h / j / k / l", classes="help-key"),     Label("Move Calendar", classes="help-desc"),
+                    Label(
+                        "p / t / n", classes="help-key"),     Label("Yesterday/Today/Tomorrow", classes="help-desc"),
+                    Label(
+                        r"\[ / ]", classes="help-key"),     Label("Last/Next Month", classes="help-desc"),
+                    Label(
+                        "{ / }", classes="help-key"),     Label("Last/Next Year", classes="help-desc"),
+                    Label(
+                        "<number>+g", classes="help-key"),  Label("Go to Day (1-31)", classes="help-desc"),
+                    Label("<MM-DD-YYYY>+G", classes="help-key"),    Label(
+                        "Go to Date (MM-DD-YYYY)", classes="help-desc"),
+                    classes="help-grid"
+                ),
+
+                Label("Actions (Calendar)", classes="help-section-title"),
+                Grid(
+                    Label(
+                        "v", classes="help-key"), Label("Focus/Unfocus list", classes="help-desc"),
+                    Label(
+                        "N (Shift+n)", classes="help-key"), Label("New Item Menu", classes="help-desc"),
+                    Label(
+                        "ctrl+p", classes="help-key"),     Label("Command Palette", classes="help-desc"),
+                    Label(
+                        "d", classes="help-key"),           Label("Toggle View", classes="help-desc"),
+                    Label(
+                        "?", classes="help-key"),           Label("Toggle Help", classes="help-desc"),
+                    Label(
+                        "1-4", classes="help-key"),         Label("Select from Menu", classes="help-desc"),
+                    Label(
+                        "Ctrl+s", classes="help-key"),      Label("Save Item", classes="help-desc"),
+                    Label(
+                        "q ctrl+q", classes="help-key"),      Label("Quit TimeMap", classes="help-desc"),
+                    Label("Esc", classes="help-key"),         Label("Cancel",
+                                                                    classes="help-desc"),
+                    classes="help-grid"
+                ),
+                Label("Item Types (List)", classes="help-section-title"),
+                Grid(
+                    Label(
+                        r"\[F]ile", classes="help-key"),     Label("Path to files", classes="help-desc"),
+                    Label(
+                        r"\[N]ote", classes="help-key"), Label("Quick Notes (content)", classes="help-desc"),
+                    Label(
+                         r"\[T]odo", classes="help-key"), Label("Todo List (checkbox + content)", classes="help-desc"),
+                    Label(
+                        r"\[D]iary", classes="help-key"), Label("Diary (title + mood + content)", classes="help-desc"),
+                    classes="help-grid"
+                ),
+                Label("Operations (List)", classes="help-section-title"),
+                Grid(
+                    Label(
+                        "o", classes="help-key"),     Label(r"\[F]open / \[NTD] Details", classes="help-desc"),
+                    Label(
+                        "O (Shift+o)", classes="help-key"), Label(r"\[F]Open with / \[T]Follow links", classes="help-desc"),
+                    Label(
+                        "n", classes="help-key"), Label(r"\[F]Rename", classes="help-desc"),
+                    Label(
+                        "r", classes="help-key"), Label("Remove", classes="help-desc"),
+                    Label(
+                        "e", classes="help-key"), Label(r"\[NTD]Edit", classes="help-desc"),
+                    Label(
+                        "f", classes="help-key"), Label(r"\[T]Toggle Finish", classes="help-desc"),
+                    classes="help-grid"
+                ),
+                id="help-scroll"
+            ),
 
             Button("Close", variant="primary", id="close-help"),
+
             id="help-dialog"
         )
 
     def action_close_help(self): self.dismiss()
     def on_button_pressed(self, event): self.dismiss()
-
-# --- CUSTOM WIDGETS ---
 
 
 class DetailItem(ListItem):
@@ -563,9 +618,9 @@ class CalendarDay(Vertical):
             self.add_class("empty-day")
 
         count_sum = (
-            stats.get('diary', 0) + 
-            stats.get('file', 0) + 
-            stats.get('todo', 0) + 
+            stats.get('diary', 0) +
+            stats.get('file', 0) +
+            stats.get('todo', 0) +
             stats.get('note', 0)
         )
         self.has_items = count_sum > 0
@@ -676,15 +731,61 @@ class TimeMapApp(App):
     #detail-title { text-style: bold; content-align: center middle; width: 100%; border-bottom: solid $primary; padding-bottom: 1; }
     #detail-meta { color: $secondary; content-align: center middle; width: 100%; margin-top: 1; margin-bottom: 1; }
     
-    #help-dialog { grid-size: 2; grid-gutter: 1 2; }
-    .dialog-buttons { align: center middle; margin-top: 1; height: 3; }
-    #input-label { margin-bottom: 1; }
-    #help-title { column-span: 2; content-align: center middle; text-style: bold; border-bottom: solid $primary; margin-bottom: 1; }
-    .help-header { column-span: 2; content-align: center middle; text-style: bold; color: $accent; margin-top: 1; }
+/* --- HELP SCREEN STYLES --- */
+    
+    #help-dialog { 
+        width: 60; 
+        height: 80%; 
+        background: $surface;
+        border: thick $background 80%; 
+        layout: vertical;
+    }
+
+    #help-title { 
+        width: 100%;
+        height: 3;
+        content-align: center middle;
+        text-style: bold;
+        border-bottom: solid $primary;
+    }
+
+    #help-scroll {
+        width: 100%;
+        height: 1fr;      /* Fills space between title and button */
+        padding: 0 2;
+        /* VerticalScroll handles overflow-y automatically */
+    }
+
+    /* Section Headers */
+    .help-section-title {
+        width: 100%;
+        text-align: center;
+        text-style: bold;
+        color: $accent;
+        margin-top: 1;
+        margin-bottom: 1;
+        background: $surface-lighten-1;
+    }
+
+    /* Key-Value Grids */
+    .help-grid {
+        width: 100%;
+        height: auto;
+        grid-size: 2; 
+        grid-gutter: 1 1; 
+        margin-bottom: 1;
+    }
+
+    #close-help { 
+        width: 100%;
+        margin-top: 1;
+    }
+
     .help-key { text-align: right; color: $secondary; text-style: bold; }
     .help-desc { text-align: left; }
-    #close-help { column-span: 2; margin-top: 2; }
-    .list-header { background: $surface-lighten-1; color: $accent; text-style: bold; height: 1; content-align: center middle; margin: 1 0; }
+
+
+   .list-header { background: $surface-lighten-1; color: $accent; text-style: bold; height: 1; content-align: center middle; margin: 1 0; }
     .todo-done { color: $text-muted; text-style: strike; }
     """
 
@@ -1130,4 +1231,6 @@ class TimeMapApp(App):
 
 def run_tui():
     app = TimeMapApp()
+    app.run()
+    app.run()
     app.run()
