@@ -37,6 +37,12 @@ def adddiary(title: str, content: str, mood: str = typer.Option("Neutral", help=
     print(f"Added diary '{title}' for {date or 'today'}")
 
 
+@app.command()
+def emptytrash():
+    db.empty_trash()
+    print("Trash emptied.")
+
+
 @app.callback(invoke_without_command=True)
 def main(ctx: typer.Context,
          config_flag: bool = typer.Option(

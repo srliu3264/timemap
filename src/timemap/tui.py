@@ -425,6 +425,8 @@ class HelpScreen(ModalScreen):
                     Label(
                         "N (Shift+n)", classes="help-key"), Label("New Item Menu", classes="help-desc"),
                     Label(
+                        "u", classes="help-key"),           Label("Recover from Trash", classes="help-desc"),
+                    Label(
                         "ctrl+p", classes="help-key"),     Label("Command Palette", classes="help-desc"),
                     Label(
                         "d", classes="help-key"),           Label("Toggle View", classes="help-desc"),
@@ -461,7 +463,9 @@ class HelpScreen(ModalScreen):
                     Label(
                         "n", classes="help-key"), Label(r"\[F]Rename", classes="help-desc"),
                     Label(
-                        "r", classes="help-key"), Label("Remove", classes="help-desc"),
+                        "r", classes="help-key"), Label("Move to Trash", classes="help-desc"),
+                    Label(
+                        "R", classes="help-key"), Label("Remove (permanently)", classes="help-desc"),
                     Label(
                         "e", classes="help-key"), Label(r"\[NTD]Edit", classes="help-desc"),
                     Label(
@@ -537,7 +541,8 @@ class ActionListView(ListView):
         Binding("o", "open_default", "Open / Details"),
         Binding("O", "open_custom", "Open With / Links"),
         Binding("n", "rename_item", "Rename"),
-        Binding("r", "remove_item", "Remove"),
+        Binding("R", "remove_item", "Remove"),
+        Binding("r", "soft_delete", "Trash"),
         Binding("e", "edit_item", "Edit"),
         Binding("E", "edit_external", "Edit externally"),
         Binding("f", "toggle_finish", "Toggle Finish"),
@@ -595,6 +600,11 @@ class ActionListView(ListView):
         item = self.highlighted_child
         if isinstance(item, DetailItem):
             self.app.action_remove_item(item)
+
+    def action_soft_delete(self):
+        item = self.highlighted_child
+        if isinstance(item, DetailItem):
+            self.app.action_soft_delete_item(item)
 
     def action_edit_item(self):
         item = self.highlighted_child
@@ -821,13 +831,15 @@ class TimeMapApp(App):
                                                                   "next_month", "+Month", show=False),
         Binding("{", "prev_year", "-Year", show=False), Binding("}",
                                                                 "next_year", "+Year", show=False),
+        Binding("G", "go_date", "Go Date", show=False),
+        Binding("g", "go_day", "Go Day", show=False),
         # Actions
         Binding("v", "focus_list", "Focus List"),
         Binding("enter", "focus_list", "Focus List"),
         Binding("N", "show_create_menu", "New Item"),
-        Binding("g", "go_day", "Go Day", show=False),
         Binding("d", "toggle_view", "Toggle View"),
-        Binding("G", "go_date", "Go Date", show=False),
+        Binding("u", "recover_item", "Recover"),
+
     ]
 
     def __init__(self):
@@ -1005,6 +1017,19 @@ class TimeMapApp(App):
         db.delete_item(item.item_id)
         self.refresh_ui()
         self.notify("Item removed")
+
+    def action_soft_delete_item(self, item):
+        db.soft_delete_item(item.item_id)
+        self.refresh_ui()
+        self.notify("Item moved to Trash (only stores 3 most recent files)")
+
+    def action_recover_item(self):
+        success = db.recover_last_deleted()
+        if success:
+            self.refresh_ui()
+            self.notify("Last item recovered")
+        else:
+            self.notify("Trash is empty", severity="warning")
 
     def action_edit_item(self, item):
         if item.type == 'diary':

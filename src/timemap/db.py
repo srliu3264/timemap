@@ -14,7 +14,7 @@ def get_db():
 
     c.execute('''CREATE TABLE IF NOT EXISTS items
                  (id INTEGER PRIMARY KEY, date TEXT, type TEXT, content TEXT,
-                  is_done INTEGER DEFAULT 0, finish_date TEXT, alias TEXT, mood TEXT)''')
+                  is_done INTEGER DEFAULT 0, finish_date TEXT, alias TEXT, mood TEXT, deleted_at TEXT)''')
 
     # MIGRATIONS
     c.execute("PRAGMA table_info(items)")
@@ -27,6 +27,8 @@ def get_db():
         c.execute("ALTER TABLE items ADD COLUMN alias TEXT")
     if 'mood' not in columns:
         c.execute("ALTER TABLE items ADD COLUMN mood TEXT")
+    if 'deleted_at' not in columns:
+        c.execute("ALTER TABLE items ADD COLUMN deleted_at TEXT")
 
     conn.commit()
     return conn
@@ -46,7 +48,7 @@ def get_items_for_date(target_date: str) -> List[Tuple]:
     conn = get_db()
     c = conn.cursor()
 
-    c.execute("SELECT id, type, content, is_done, finish_date, alias, mood FROM items WHERE date = ? AND type != 'todo'", (target_date,))
+    c.execute("SELECT id, type, content, is_done, finish_date, alias, mood FROM items WHERE date = ? AND type != 'todo' AND deleted_at IS NULL", (target_date,))
     items = c.fetchall()
 
     c.execute("""
@@ -54,6 +56,7 @@ def get_items_for_date(target_date: str) -> List[Tuple]:
         WHERE type = 'todo'
           AND date <= ?
           AND (is_done = 0 OR finish_date >= ?)
+          AND deleted_at IS NULL
     """, (target_date, target_date))
 
     items.extend(c.fetchall())
@@ -73,6 +76,49 @@ def toggle_todo_status(item_id: int, action_date: str):
         else:
             c.execute(
                 "UPDATE items SET is_done = 0, finish_date = NULL WHERE id = ?", (item_id,))
+    conn.commit()
+    conn.close()
+
+
+def soft_delete_item(item_id: int):
+    """
+    Keeps only the 3 most recent delted items.
+    Permanently deletes anything older. 
+    """
+    conn = get_db()
+    c = conn.cursor()
+    now = datetime.now().isoformat()
+
+    c.execute("UPDATE items SET deleted_at = ? WHERE id = ?", (now, item_id))
+    c.execute(
+        "SELECT id FROM items WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC")
+    deleted_rows = c.fetchall()
+    if len(deleted_rows) > 3:
+        to_remove = deleted_rows[3:]
+        for row in to_remove:
+            c.execute("DELETE FROM items WHERE id = ?", (row[0],))
+    conn.commit()
+    conn.close()
+
+
+def recover_last_deleted():
+    conn = get_db()
+    c = conn.cursor()
+    c.execute(
+        "SELECT id FROM items WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC LIMIT 1")
+    row = c.fetchone()
+    if row:
+        c.execute("UPDATE items SET deleted_at = NULL WHERE id = ?", (row[0],))
+        conn.commit()
+        conn.close()
+        return True
+    conn.close()
+    return False
+
+
+def empty_trash():
+    conn = get_db()
+    conn.execute("DELETE FROM items WHERE deleted_at IS NOT NULL")
     conn.commit()
     conn.close()
 
@@ -184,7 +230,9 @@ def get_month_stats(year: int, month: int) -> dict:
     c.execute("""
         SELECT date, type, count(*)
         FROM items
-        WHERE type IN ('diary', 'file', 'note') AND date LIKE ?
+        WHERE type IN ('diary', 'file', 'note')
+            AND date LIKE ?
+            AND deleted_at IS NULL
         GROUP BY date, type
     """, (search_pattern,))
 
@@ -197,7 +245,7 @@ def get_month_stats(year: int, month: int) -> dict:
             pass
 
     c.execute(
-        "SELECT date, mood FROM items WHERE type='diary' AND date LIKE ?", (search_pattern,))
+        "SELECT date, mood FROM items WHERE type='diary' AND date LIKE ? AND deleted_at IS NULL", (search_pattern,))
     for date_str, mood in c.fetchall():
         try:
             d_obj = date.fromisoformat(date_str)
@@ -208,7 +256,7 @@ def get_month_stats(year: int, month: int) -> dict:
     month_start = date(year, month, 1)
     month_end = date(year, month, last_day)
 
-    c.execute("SELECT date, finish_date, is_done FROM items WHERE type = 'todo' AND date <= ?",
+    c.execute("SELECT date, finish_date, is_done FROM items WHERE type = 'todo' AND date <= ? AND deleted_at IS NULL",
               (month_end.isoformat(),))
 
     for create_str, finish_str, is_done in c.fetchall():
