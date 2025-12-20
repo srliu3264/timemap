@@ -4,6 +4,14 @@
 
 It helps you map your life by linking files, notes, and tasks to specific dates, visualizing connections through tags, and exploring your data.
 
+## Table of Contents
+
+* [✨ Features](#-features)
+* [Installation](#installation)
+  * [Binary version (Recommended)](#binary-version-recommended)
+  * [Python version](#python-version)
+* [Terminal Commands](#terminal-commands)
+* [TimeMap TUI](#timemap-tui)
 
 ## ✨ Features
 
@@ -23,7 +31,7 @@ It helps you map your life by linking files, notes, and tasks to specific dates,
 
 ```bash
 # 1. Download the binary
-sudo curl -L https://github.com/YOUR_USER/timemap/releases/download/v0.1.0/timemap-linux -o /usr/local/bin/timemap
+sudo curl -L https://github.com/srliu3264/timemap/releases/download/v1.0/timemap-linux -o /usr/local/bin/timemap
 
 # 2. Make it executable
 sudo chmod +x /usr/local/bin/timemap
@@ -44,7 +52,7 @@ timemap
 
 ```bash
 # Install globally as a tool
-uv tool install git+[https://github.com/srliu3264/timemap.git]([https://github.com/yourusername/timemap.git])
+uv tool install git+[https://github.com/srliu3264/timemap.git](https://github.com/srliu3264/timemap.git)
 
 # Run it!
 timemap
@@ -53,7 +61,7 @@ timemap
 #### Option2: Install via Pip
 
 ```bash
-pip install git+[https://github.com/srliu3264/timemap.git]([https://github.com/yourusername/timemap.git])
+pip install git+[https://github.com/srliu3264/timemap.git](https://github.com/srliu3264/timemap.git)
 ```
 
 ## Terminal Commands
@@ -70,12 +78,14 @@ pip install git+[https://github.com/srliu3264/timemap.git]([https://github.com/y
 
 ## TimeMap TUI
 
+### How to use
+
 Press `?` for a full list a hot key commands.
 
+### Item type
 There are four types of items:
 
 1. `file`: link to file on your device. Press `o` to open with default app (configured by `timemap --default`) and `O` to open with selected app.
 2. `diary`: consists of `title` + `mood` + `content`, exportable to markdown files with configurable front matter/template.
 3. `note`: consists of `content`, exportable to markdown files with configurable template.
 4. `to do list`: consists of `content` and `checkbox`. If content has links (`[things](link)`), then press `O` will open the link with default browser.
-
