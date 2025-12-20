@@ -41,6 +41,8 @@ sudo chmod +x /usr/local/bin/timemap
 timemap
 ```
 
+For Archlinux users, one can also install as AUR, via `yay`, `paru` etc. or manually install as AUR repository. The AUR page is at [https://aur.archlinux.org/packages/timemap-bin](https://aur.archlinux.org/packages/timemap-bin).
+
 #### Windows Users
 
 1. Download `timemap-windows.exe`.
