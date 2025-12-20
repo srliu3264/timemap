@@ -47,6 +47,12 @@ def get_db():
     return conn
 
 
+def _cleanup_orphaned_tags(conn):
+    """Helper to delete tags that have 0 references in the item_tags table."""
+    conn.execute(
+        "DELETE FROM tags WHERE id NOT IN (SELECT DISTINCT tag_id FROM item_tags)")
+
+
 def add_item(item_type: str, content: str, target_date: str = None, alias: str = None, mood: str = None):
     if target_date is None:
         target_date = date.today().isoformat()
@@ -109,7 +115,9 @@ def soft_delete_item(item_id: int):
     if len(deleted_rows) > 3:
         to_remove = deleted_rows[3:]
         for row in to_remove:
+            c.execute("DELETE FROM item_tags WHERE item_id = ?", (row[0],))
             c.execute("DELETE FROM items WHERE id = ?", (row[0],))
+        _cleanup_orphaned_tags(conn)
     conn.commit()
     conn.close()
 
@@ -131,14 +139,19 @@ def recover_last_deleted():
 
 def empty_trash():
     conn = get_db()
+    conn.execute(
+        "DELETE FROM item_tags WHERE item_id IN (SELECT id FROM items WHERE deleted_at IS NOT NULL)")
     conn.execute("DELETE FROM items WHERE deleted_at IS NOT NULL")
+    _cleanup_orphaned_tags(conn)
     conn.commit()
     conn.close()
 
 
 def delete_item(item_id: int):
     conn = get_db()
+    conn.execute("DELETE FROM item_tags WHERE item_id = ?", (item_id,))
     conn.execute("DELETE FROM items WHERE id = ?", (item_id,))
+    _cleanup_orphaned_tags(conn)
     conn.commit()
     conn.close()
 
@@ -157,8 +170,6 @@ def update_item_alias(item_id: int, new_alias: str):
                  (new_alias, item_id))
     conn.commit()
     conn.close()
-
-# --- NEW FUNCTION ---
 
 
 def update_diary_item(item_id: int, title: str, mood: str, content: str):
@@ -374,11 +385,8 @@ def update_item_tags(item_id: int, tags_list: List[str]):
     conn = get_db()
     c = conn.cursor()
 
-    # 1. Clear existing tags for this item
     c.execute("DELETE FROM item_tags WHERE item_id = ?", (item_id,))
 
-    # 2. Add new tags
-    # predefined colors for random assignment
     colors = ["red", "green", "blue", "magenta", "yellow", "cyan",
               "#ff5555", "#50fa7b", "#f1fa8c", "#bd93f9", "#ff79c6", "#8be9fd"]
 
@@ -387,8 +395,6 @@ def update_item_tags(item_id: int, tags_list: List[str]):
         if not clean_tag:
             continue
 
-        # Ensure tag exists in 'tags' table
-        # We check if it exists to preserve color if it does, or assign new color if new
         c.execute("SELECT id FROM tags WHERE name = ?", (clean_tag,))
         row = c.fetchone()
 
@@ -401,9 +407,9 @@ def update_item_tags(item_id: int, tags_list: List[str]):
                       (clean_tag, color))
             tag_id = c.lastrowid
 
-        # Link item
         c.execute(
             "INSERT INTO item_tags (item_id, tag_id) VALUES (?, ?)", (item_id, tag_id))
+    _cleanup_orphaned_tags(conn)
 
     conn.commit()
     conn.close()
@@ -413,7 +419,6 @@ def get_tags_for_item(item_id: int) -> List[Tuple]:
     """Returns list of (name, color) for an item."""
     conn = get_db()
     c = conn.cursor()
-    # Join to get name and color
     c.execute("""
         SELECT t.name, t.color 
         FROM tags t 
@@ -432,8 +437,10 @@ def get_all_tags() -> List[Tuple]:
     c.execute("""
         SELECT t.id, t.name, COUNT(it.item_id) as count
         FROM tags t
-        LEFT JOIN item_tags it ON t.id = it.tag_id
-        GROUP BY t.id
+        JOIN item_tags it ON t.id = it.tag_id
+        JOIN items i ON it.item_id = i.id
+        WHERE i.deleted_at IS NULL
+        GROUP BY t.id, t.name
         ORDER BY count DESC
     """)
     rows = c.fetchall()
