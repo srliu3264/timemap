@@ -14,6 +14,7 @@ import shutil
 from pathlib import Path
 from textual_plotext import PlotextPlot
 from . import db, config
+import random
 
 # --- UTILS ---
 
@@ -566,6 +567,267 @@ class StatsScreen(ModalScreen):
     def on_close_btn(self): self.dismiss()
 
 
+class TagInputScreen(ModalScreen):
+    # Fix Problem 4: Add Ctrl+S and Esc
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel"),
+        Binding("ctrl+s", "save", "Save"),
+    ]
+
+    def __init__(self, item_id: int):
+        super().__init__()
+        self.item_id = item_id
+        # Pre-fill with existing tags so user can edit them
+        current_tags = db.get_tags_for_item(item_id)
+        self.initial_value = ", ".join([t[0] for t in current_tags])
+
+    def compose(self) -> ComposeResult:
+        yield Container(
+            Label("Edit Tags (comma separated, clear to remove):",
+                  classes="field-label"),
+            Input(self.initial_value, id="tag-input"),
+            Horizontal(
+                Button("Cancel", id="btn-cancel"),
+                Button("Save", variant="primary", id="btn-save"),
+                classes="dialog-buttons"
+            ),
+            id="input-dialog"
+        )
+
+    def on_mount(self):
+        # Focus input and move cursor to end
+        inp = self.query_one(Input)
+        inp.focus()
+        inp.action_end()
+
+    def action_save(self):
+        val = self.query_one(Input).value
+        # Split by comma, strip spaces, remove empty strings
+        if not val or val.strip() == "":
+            tags = []
+        else:
+            tags = [t.strip() for t in val.split(',') if t.strip()]
+
+        # Fix Problem 1: Update (Overwrite) tags
+        db.update_item_tags(self.item_id, tags)
+        self.dismiss(True)
+
+    def action_cancel(self):
+        self.dismiss(False)
+
+    @on(Button.Pressed, "#btn-save")
+    def on_save(self): self.action_save()
+
+    @on(Button.Pressed, "#btn-cancel")
+    def on_cancel(self): self.action_cancel()
+
+    @on(Input.Submitted)
+    def on_submit(self): self.action_save()
+
+
+class TagListScreen(ModalScreen):
+    """Browses all tags."""
+    BINDINGS = [
+        Binding("escape", "close", "Close"),
+        Binding("g", "show_graph", "Graph View"),
+        Binding("v", "view_items", "View Items"),
+        Binding("j", "down", "Down"),
+        Binding("k", "up", "Up"),
+    ]
+
+    def compose(self) -> ComposeResult:
+        tags = db.get_all_tags()
+        items = []
+        for t_id, t_name, count in tags:
+            items.append(
+                ListItem(Label(f"[{'cyan'}]{t_name}[/] ({count})"), name=str(t_id)))
+
+        yield Container(
+            Label("All Tags (Press 'v' to filter, 'g' for Graph)", id="tag-title"),
+            ListView(*items, id="tag-list"),
+            Button("Close", id="btn-close"),
+            id="tag-dialog"
+        )
+
+    def on_mount(self): self.query_one(ListView).focus()
+
+    def action_down(self):
+        self.query_one(ListView).action_cursor_down()
+
+    def action_up(self):
+        self.query_one(ListView).action_cursor_up()
+
+    def action_view_items(self):
+        list_view = self.query_one(ListView)
+        if list_view.highlighted_child:
+            tag_id = int(list_view.highlighted_child.name)
+
+            # Callback to handle the result from the filter screen
+            def callback(result_date):
+                if result_date:
+                    # If we got a date string back, dismiss THIS screen too
+                    # and pass the date up to TimeMapApp
+                    self.dismiss(result_date)
+
+            self.app.push_screen(TagFilterResultScreen(tag_id), callback)
+
+    def action_show_graph(self):
+        self.app.push_screen(TagGraphScreen())
+
+    def action_close(self): self.dismiss(None)
+
+    @on(Button.Pressed, "#btn-close")
+    def on_close_btn(self): self.dismiss(None)
+
+
+class TagFilterResultScreen(ModalScreen):
+    """Shows items for a specific tag."""
+    BINDINGS = [
+        Binding("escape", "close", "Back"),
+        Binding("v", "close", "Back"),
+        Binding("q", "close", "Back"),
+        Binding("d", "goto_date", "Go to Date"),  # New binding
+        Binding("j", "down", "Down"),
+        Binding("k", "up", "Up"),
+    ]
+
+    def __init__(self, tag_id):
+        super().__init__()
+        self.tag_id = tag_id
+
+    def compose(self) -> ComposeResult:
+        items = db.get_items_by_tag(self.tag_id)
+        widgets = []
+
+        if not items:
+            widgets.append(ListItem(Label("No items found for this tag.")))
+        else:
+            for i in items:
+                _, type_, content, is_done, _, alias, _, date_str = i
+
+                display_text = ""
+                icon = "●"
+
+                if type_ == 'diary':
+                    icon = ""
+                    display_text = alias if alias else "Diary Entry"
+
+                elif type_ == 'note':
+                    icon = "󰏪"
+                    lines = content.strip().splitlines()
+                    first = lines[0] if lines else "Empty Note"
+                    display_text = (
+                        first[:50] + "...") if len(first) > 50 else first
+
+                elif type_ == 'todo':
+                    icon = "" if is_done else "󰆢"
+                    lines = content.strip().splitlines()
+                    first = lines[0] if lines else "Empty Todo"
+                    display_text = (
+                        first[:50] + "...") if len(first) > 50 else first
+
+                elif type_ == 'file':
+                    icon = ""
+                    display_text = alias if alias else os.path.basename(
+                        content)
+
+                label_str = f"[{'cyan'}]{date_str}[/] {icon} {display_text}"
+
+                widgets.append(ListItem(Label(label_str), name=date_str))
+
+        yield Container(
+            Label("Tagged Items (Press 'd' to jump to date)", id="tag-title"),
+            ListView(*widgets, id="tag-filter-list"),
+            Button("Back", id="btn-back"),
+            id="tag-dialog"
+        )
+
+    def on_mount(self):
+        self.query_one("#tag-filter-list").focus()
+
+    def action_down(self):
+        self.query_one("#tag-filter-list").action_cursor_down()
+
+    def action_up(self):
+        self.query_one("#tag-filter-list").action_cursor_up()
+
+    def action_close(self):
+        self.dismiss(None)
+
+    def action_goto_date(self):
+        # Retrieve the date stored in the highlighted item
+        list_view = self.query_one("#tag-filter-list", ListView)
+        if list_view.highlighted_child:
+            date_str = list_view.highlighted_child.name
+            if date_str:
+                self.dismiss(date_str)  # Return the date to the parent screen
+
+    @on(Button.Pressed, "#btn-back")
+    def on_back(self): self.dismiss(None)
+
+
+class TagGraphScreen(ModalScreen):
+    """
+    ASCII Graph Visualization:
+    Star -> [Tag] -> [Item] -> [Item]
+    """
+    BINDINGS = [Binding("escape", "close", "Close")]
+
+    def compose(self) -> ComposeResult:
+        yield Container(
+            Label("Tag Knowledge Graph", id="graph-title"),
+            ScrollableContainer(Label(self.generate_graph()), id="graph-area"),
+            Button("Close", id="btn-close"),
+            id="graph-dialog"
+        )
+
+    def generate_graph(self):
+        tags = db.get_all_tags()
+        lines = []
+
+        # Root Star
+        lines.append("[bold yellow]★ ROOT[/]")
+
+        for t_id, t_name, _ in tags:
+            # Tag Node
+            lines.append(f"  └── [bold cyan]■ {t_name}[/]")
+
+            # Get items for this tag sorted by date
+            items = db.get_items_by_tag(t_id)
+
+            # Draw chain of items
+            for idx, item in enumerate(items):
+                is_last = (idx == len(items) - 1)
+                prefix = "      "
+                connector = "└──" if is_last else "├──"
+
+                # Color based on type
+                itype = item[1]
+                color = "white"
+                if itype == 'diary':
+                    color = "magenta"
+                elif itype == 'note':
+                    color = "green"
+                elif itype == 'todo':
+                    color = "blue"
+                elif itype == 'file':
+                    color = "yellow"
+
+                name = item[5] if item[5] else item[2][:20]  # Alias or Content
+                date_str = item[7]
+
+                node = f"{prefix}{connector} [{color}]● {date_str}: {name}[/]"
+                lines.append(node)
+
+                # If we want to strictly follow "connected to adjacent items" visually:
+                # The tree structure naturally implies sequence.
+
+        return "\n".join(lines)
+
+    @on(Button.Pressed, "#btn-close")
+    def on_close(self): self.dismiss()
+
+
 class DetailItem(ListItem):
     def __init__(self, item_id, type, content, is_done=False, finish_date=None, alias=None, mood=None, date_str=None):
         self.item_id = item_id
@@ -606,7 +868,14 @@ class DetailItem(ListItem):
             else:
                 icon = "󰆢"
 
-        super().__init__(Label(f"{icon} {display_text}"))
+        tags = db.get_tags_for_item(item_id)
+        tag_str = ""
+        if tags:
+            # Format: "[tag1] [tag2] "
+            for t_name, t_color in tags:
+                tag_str += f"[{t_color} bold]({t_name})[/] "
+
+        super().__init__(Label(f"{icon} {tag_str} {display_text}"))
         if should_strike:
             self.add_class("todo-done")
 
@@ -626,6 +895,7 @@ class ActionListView(ListView):
         Binding("e", "edit_item", "Edit"),
         Binding("E", "edit_external", "Edit externally"),
         Binding("f", "toggle_finish", "Toggle Finish"),
+        Binding("T", "add_tags", "Add Tag"),
         Binding("j", "cursor_down", "Down", show=False),
         Binding("k", "cursor_up", "Up", show=False),
         Binding("h", "unfocus_list", "Back to Cal", show=False),
@@ -700,6 +970,14 @@ class ActionListView(ListView):
         item = self.highlighted_child
         if isinstance(item, DetailItem) and item.type == 'todo':
             self.app.action_toggle_finish(item)
+
+    def action_add_tags(self):
+        item = self.highlighted_child
+        if isinstance(item, DetailItem):
+            def callback(refresh):
+                if refresh:
+                    self.app.refresh_ui()
+            self.app.push_screen(TagInputScreen(item.item_id), callback)
 
 
 class CalendarDay(Vertical):
@@ -920,6 +1198,18 @@ class TimeMapApp(App):
         width: 100%;
         height: 1fr;
     }
+
+    #tag-dialog, #graph-dialog {
+        width: 80%; height: 80%;
+        background: $surface;
+        border: thick $background 80%;
+        padding: 1;
+    }
+    #tag-title, #graph-title {
+        width: 100%; text-align: center; text-style: bold; 
+        border-bottom: solid $primary; margin-bottom: 1;
+    }
+    #graph-area { height: 1fr; border: solid $secondary; padding: 1; overflow: auto; }
     """
 
     BINDINGS = [
@@ -946,6 +1236,7 @@ class TimeMapApp(App):
         Binding("d", "toggle_view", "Toggle View"),
         Binding("u", "recover_item", "Recover"),
         Binding("S", "show_stats", "Stats"),
+        Binding("C", "show_tags", "Tags"),
 
     ]
 
@@ -1247,6 +1538,20 @@ class TimeMapApp(App):
 
     def action_show_stats(self):
         self.push_screen(StatsScreen(self.display_year))
+
+    def action_show_tags(self):
+        def callback(result):
+            if result:
+                # 'result' is the date string returned from the tag screens
+                try:
+                    target_date = date.fromisoformat(result)
+                    # Use existing helper to update calendar and focus
+                    self.call_from_child(target_date)
+                    self.notify(f"Jumped to {target_date}")
+                except ValueError:
+                    pass
+
+        self.app.push_screen(TagListScreen(), callback)
 
     def open_file(self, path, command):
         if not os.path.exists(path):

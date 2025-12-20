@@ -30,6 +30,14 @@ def get_db():
     if 'deleted_at' not in columns:
         c.execute("ALTER TABLE items ADD COLUMN deleted_at TEXT")
 
+    c.execute('''CREATE TABLE IF NOT EXISTS tags
+                 (id INTEGER PRIMARY KEY, name TEXT UNIQUE, color TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS item_tags
+                 (item_id INTEGER, tag_id INTEGER, 
+                  FOREIGN KEY(item_id) REFERENCES items(id),
+                  FOREIGN KEY(tag_id) REFERENCES tags(id),
+                  PRIMARY KEY(item_id, tag_id))''')
+
     conn.commit()
     return conn
 
@@ -350,3 +358,95 @@ def get_year_stats(year: int) -> dict:
 
     conn.close()
     return stats
+
+
+def update_item_tags(item_id: int, tags_list: List[str]):
+    """
+    Rewrites tags for an item. 
+    1. Removes ALL existing tags for this item.
+    2. Adds the new tags provided (if any).
+    """
+    conn = get_db()
+    c = conn.cursor()
+
+    # 1. Clear existing tags for this item
+    c.execute("DELETE FROM item_tags WHERE item_id = ?", (item_id,))
+
+    # 2. Add new tags
+    # predefined colors for random assignment
+    colors = ["red", "green", "blue", "magenta", "yellow", "cyan",
+              "#ff5555", "#50fa7b", "#f1fa8c", "#bd93f9", "#ff79c6", "#8be9fd"]
+
+    for tag_name in tags_list:
+        clean_tag = tag_name.strip()
+        if not clean_tag:
+            continue
+
+        # Ensure tag exists in 'tags' table
+        # We check if it exists to preserve color if it does, or assign new color if new
+        c.execute("SELECT id FROM tags WHERE name = ?", (clean_tag,))
+        row = c.fetchone()
+
+        if row:
+            tag_id = row[0]
+        else:
+            import random
+            color = random.choice(colors)
+            c.execute("INSERT INTO tags (name, color) VALUES (?, ?)",
+                      (clean_tag, color))
+            tag_id = c.lastrowid
+
+        # Link item
+        c.execute(
+            "INSERT INTO item_tags (item_id, tag_id) VALUES (?, ?)", (item_id, tag_id))
+
+    conn.commit()
+    conn.close()
+
+
+def get_tags_for_item(item_id: int) -> List[Tuple]:
+    """Returns list of (name, color) for an item."""
+    conn = get_db()
+    c = conn.cursor()
+    # Join to get name and color
+    c.execute("""
+        SELECT t.name, t.color 
+        FROM tags t 
+        JOIN item_tags it ON t.id = it.tag_id 
+        WHERE it.item_id = ?
+    """, (item_id,))
+    tags = c.fetchall()
+    conn.close()
+    return tags
+
+
+def get_all_tags() -> List[Tuple]:
+    """Returns list of (id, name, count)"""
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("""
+        SELECT t.id, t.name, COUNT(it.item_id) as count
+        FROM tags t
+        LEFT JOIN item_tags it ON t.id = it.tag_id
+        GROUP BY t.id
+        ORDER BY count DESC
+    """)
+    rows = c.fetchall()
+    conn.close()
+    return rows
+
+
+def get_items_by_tag(tag_id: int) -> List[Tuple]:
+    """Returns items for a specific tag."""
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("""
+        SELECT i.id, i.type, i.content, i.is_done, i.finish_date, i.alias, i.mood, i.date
+        FROM items i
+        JOIN item_tags it ON i.id = it.item_id
+        WHERE it.tag_id = ? AND i.deleted_at IS NULL
+        ORDER BY i.date
+    """, (tag_id,))
+    rows = c.fetchall()
+    conn.close()
+    return rows
