@@ -3,8 +3,13 @@ import os
 import calendar
 from datetime import date, timedelta, datetime
 from typing import List, Tuple, Set
+import platform
 
-DB_PATH = os.path.expanduser("~/.local/share/timemap.db")
+if platform.system() == "Windows":
+    base_dir = os.environ.get("LOCALAPPDATA", os.path.expanduser("~"))
+    DB_PATH = os.path.join(base_dir, "timemap", "timemap.db")
+else:
+    DB_PATH = os.path.expanduser("~/.local/share/timemap.db")
 
 
 def get_db():

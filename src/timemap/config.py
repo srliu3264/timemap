@@ -1,20 +1,36 @@
 import os
 import toml
 import shutil
+import platform
 
-CONFIG_DIR = os.path.expanduser("~/.config/timemap")
+IS_WINDOWS = platform.system() == "Windows"
+IS_MAC = platform.system() == "Darwin"
+
+if IS_WINDOWS:
+    CONFIG_DIR = os.path.join(os.environ.get(
+        "APPDATA", os.path.expanduser("~")), "timemap")
+else:
+    CONFIG_DIR = os.path.expanduser("~/.config/timemap")
+
 CONFIG_PATH = os.path.join(CONFIG_DIR, "config.toml")
 
-DEFAULT_CONFIG = """
+if IS_WINDOWS:
+    DEFAULT_EDITOR = "notepad"
+    DEFAULT_OPENER = "start"
+else:
+    DEFAULT_EDITOR = "nvim" if shutil.which("nvim") else "vim"
+    DEFAULT_OPENER = "open" if IS_MAC else "xdg-open"
+
+DEFAULT_CONFIG = f"""
 # TimeMap Configuration
 # Uncomment lines to override system defaults
 
-# editor = "nvim"
+# editor = "{DEFAULT_EDITOR}"
 
 [defaults]
 # pdf = "zathura"
-# md = "nvim"
-# txt = "nvim"
+# md = "{DEFAULT_EDITOR}"
+# txt = "{DEFAULT_EDITOR}"
 # html = "firefox"
 # jpg = "feh"
 """
@@ -41,7 +57,7 @@ def get_editor():
     config = load_config()
     if "editor" in config:
         return config["editor"]
-    return os.environ.get("EDITOR", "nvim")
+    return os.environ.get("EDITOR", DEFAULT_EDITOR)
 
 
 def get_open_command(filepath: str):
@@ -55,10 +71,10 @@ def get_open_command(filepath: str):
     if ext in defaults:
         return defaults[ext]
 
-    return "xdg-open"
+    return DEFAULT_OPENER
 
 
 def edit_config():
     ensure_config()
-    editor = os.environ.get("EDITOR", "vim")
+    editor = get_editor()
     os.system(f"{editor} {CONFIG_PATH}")

@@ -15,14 +15,22 @@ from pathlib import Path
 from textual_plotext import PlotextPlot
 from . import db, config
 import random
+import platform
 
 # --- UTILS ---
 
 
 def open_url(url):
+    system = platform.system()
     try:
-        subprocess.Popen(['xdg-open', url], start_new_session=True,
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if system == "Windows":
+            os.startfile(url)
+        elif system == "Darwin":
+            subprocess.Popen(
+                ['open', url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        else:
+            subprocess.Popen(
+                ['xdg-open', url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except Exception:
         pass
 
@@ -1520,7 +1528,10 @@ class TimeMapApp(App):
     def action_smart_open(self, item):
         if item.type == 'file':
             cmd = config.get_open_command(item.content)
-            self.open_file(item.content, cmd)
+            if cmd in ["start", "xdg-open", "open"]:
+                open_url(item.content)
+            else:
+                self.open_file(item.content, cmd)
         elif item.type == 'todo':
             match = re.search(r'\[.*?\]\((.*?)\)', item.content)
             if match:
@@ -1581,6 +1592,12 @@ class TimeMapApp(App):
     def open_file(self, path, command):
         if not os.path.exists(path):
             self.notify("File missing", severity="error")
+            return
+        if platform.system() == "Windows":
+            try:
+                subprocess.Popen([command, path], shell=True)
+            except FileNotFoundError:
+                self.notify(f"Command '{command}' not found", severity="error")
             return
         cmd_list = [command, path]
         term_apps = ['nvim', 'vim', 'vi', 'nano', 'htop', 'less', 'top']
