@@ -17,7 +17,27 @@ It helps you map your life by linking files, notes, and tasks to specific dates,
 <!-- * **📤 Import/Export**: Full backup support to Markdown/Folder structures (Hard/Soft copy). -->
 
 ## Installation
-### Binary version
+### Binary version (Recommended)
+
+#### Mac/Linux Users
+
+```bash
+# 1. Download the binary
+sudo curl -L https://github.com/YOUR_USER/timemap/releases/download/v0.1.0/timemap-linux -o /usr/local/bin/timemap
+
+# 2. Make it executable
+sudo chmod +x /usr/local/bin/timemap
+
+# 3. Run
+timemap
+```
+
+#### Windows Users
+
+1. Download `timemap-windows.exe`.
+2. Place it in a folder (e.g., `C:\Program Files\TimeMap`).
+3. Add that folder to your System `PATH` environment variable.
+4. Open PowerShell/CMD and type timemap.
 
 ### Python version
 #### Option 1: Install with `uv` (Recommended)
