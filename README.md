@@ -16,9 +16,11 @@ It helps you map your life by linking files, notes, and tasks to specific dates,
 * **📊 Statistics**: View yearly trends for your productivity and moods.
 <!-- * **📤 Import/Export**: Full backup support to Markdown/Folder structures (Hard/Soft copy). -->
 
-## 🚀 Installation
+## Installation
+### Binary version
 
-### Option 1: Install with `uv` (Recommended)
+### Python version
+#### Option 1: Install with `uv` (Recommended)
 
 ```bash
 # Install globally as a tool
@@ -26,6 +28,12 @@ uv tool install git+[https://github.com/srliu3264/timemap.git]([https://github.c
 
 # Run it!
 timemap
+```
+
+#### Option2: Install via Pip
+
+```bash
+pip install git+[https://github.com/srliu3264/timemap.git]([https://github.com/yourusername/timemap.git])
 ```
 
 ## Terminal Commands
@@ -39,3 +47,15 @@ timemap
 - `timemap output` output notes and diaries.
 - `timemap output --note` only output notes.
 - `timemap output --diary` only output diary.
+
+## TimeMap TUI
+
+Press `?` for a full list a hot key commands.
+
+There are four types of items:
+
+1. `file`: link to file on your device. Press `o` to open with default app (configured by `timemap --default`) and `O` to open with selected app.
+2. `diary`: consists of `title` + `mood` + `content`, exportable to markdown files with configurable front matter/template.
+3. `note`: consists of `content`, exportable to markdown files with configurable template.
+4. `to do list`: consists of `content` and `checkbox`. If content has links (`[things](link)`), then press `O` will open the link with default browser.
+

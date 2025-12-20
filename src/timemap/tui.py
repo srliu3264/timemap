@@ -909,25 +909,28 @@ class HeaderItem(ListItem):
 
 class ActionListView(ListView):
     BINDINGS = [
-        Binding("o", "open_default", "Open / Details"),
-        Binding("O", "open_custom", "Open With / Links"),
+        Binding("o", "open_default", "Open"),
+        Binding("O", "open_custom", "Open With/Links", show=False),
         Binding("n", "rename_item", "Rename"),
         Binding("R", "remove_item", "Remove"),
         Binding("r", "soft_delete", "Trash"),
         Binding("e", "edit_item", "Edit"),
-        Binding("E", "edit_external", "Edit externally"),
+        Binding("E", "edit_external", "Edit Externally"),
         Binding("f", "toggle_finish", "Toggle Finish"),
         Binding("T", "add_tags", "Add Tag"),
+
         Binding("j", "cursor_down", "Down", show=False),
         Binding("k", "cursor_up", "Up", show=False),
         Binding("h", "unfocus_list", "Back to Cal", show=False),
         Binding("v", "unfocus_list", "Back to Cal", show=False),
         Binding("escape", "unfocus_list", "Back to Cal", show=False),
-
         Binding("q", "quit", "Quit", show=False),
         Binding("?", "show_help", "Help", show=False),
-        # Binding("N", "show_create_menu", "New", show=False),
+        Binding("N", "show_create_menu", "New", show=False),
         Binding("d", "toggle_view", "Toggle", show=False),
+        Binding("u", "recover_item", "Recover", show=False),
+        Binding("S", "show_stats", "Stats", show=False),
+        Binding("C", "show_tags", "Tags", show=False),
     ]
 
     def action_unfocus_list(self): self.app.action_focus_calendar()

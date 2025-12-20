@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "pyyaml>=6.0.3",
     "rich>=14.2.0",
     "textual>=6.10.0",
     "textual-plotext>=1.0.1",
@@ -14,3 +15,8 @@ dependencies = [
 
 [project.scripts]
 timemap = "timemap.main:run"
+
+[dependency-groups]
+dev = [
+    "pyinstaller>=6.17.0",
+]

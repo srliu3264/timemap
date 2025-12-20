@@ -1,7 +1,9 @@
 import typer
 import sys
 import os
+from pathlib import Path
 from . import db, tui, config, output
+
 
 app = typer.Typer(
     help="[bold green]TimeMap[/] - A Terminal-based Diary & Knowledge Graph Manager.",
