@@ -12,6 +12,7 @@ It helps you map your life by linking files, notes, and tasks to specific dates,
   * [Python version](#python-version)
 * [Terminal Commands](#terminal-commands)
 * [TimeMap TUI](#timemap-tui)
+* [Uninstall](#uninstall)
 
 ## ✨ Features
 
@@ -89,3 +90,26 @@ There are four types of items:
 2. `diary`: consists of `title` + `mood` + `content`, exportable to markdown files with configurable front matter/template.
 3. `note`: consists of `content`, exportable to markdown files with configurable template.
 4. `to do list`: consists of `content` and `checkbox`. If content has links (`[things](link)`), then press `O` will open the link with default browser.
+
+## Uninstall
+
+### Binary
+#### Mac/Linux
+
+1. Uninstall the app
+
+```bash
+sudo rm /usr/local/bin/timemap
+```
+2. Remove configuration
+
+```bash
+rm -rf ~/.config/timemap
+```
+
+3. Remove Database (Your Diary/Notes/Todo). Be careful, if you have not exported and backed up, this process is not reversible.
+
+```bash
+rm ~/.local/share/timemap.db
+```
+
