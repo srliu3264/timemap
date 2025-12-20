@@ -28,20 +28,53 @@ It helps you map your life by linking files, notes, and tasks to specific dates,
 ## Installation
 ### Binary version (Recommended)
 
+
+For **Archlinux** users, one can also install as AUR, via `yay`, `paru` etc. or manually install as AUR repository. The AUR page is at [https://aur.archlinux.org/packages/timemap-bin](https://aur.archlinux.org/packages/timemap-bin).
+
+For other distributions of linux or macOS or windows, follow the instructions in next subsections.
 #### Mac/Linux Users
 
+1. Download the corresponding binary
+
+**Method 1:**
+
+**Linux:**
+
 ```bash
-# 1. Download the binary
+# linux
 sudo curl -L https://github.com/srliu3264/timemap/releases/download/v1.0/timemap-linux -o /usr/local/bin/timemap
-
-# 2. Make it executable
-sudo chmod +x /usr/local/bin/timemap
-
-# 3. Run
-timemap
 ```
 
-For Archlinux users, one can also install as AUR, via `yay`, `paru` etc. or manually install as AUR repository. The AUR page is at [https://aur.archlinux.org/packages/timemap-bin](https://aur.archlinux.org/packages/timemap-bin).
+**Mac:**
+
+```bash
+# Mac
+sudo curl -L https://github.com/srliu3264/timemap/releases/download/v1.0/timemap-macos`` -o /usr/local/bin/timemap
+```
+
+Here the link above is for `v1.0`, one should check the latest version.
+
+**Method 2:**
+
+One can go to [Release Page (https://github.com/srliu3264/timemap/releases)](https://github.com/srliu3264/timemap/releases),dowload the corresponding binary (called `timemap-linux` or `timemap-macos`).
+
+Then rename the file as `timemap` and move it to `/usr/local/bin` (reaplce `~/Downloads/timemap-macos` with path to your downloaded file):
+
+```bash 
+sudo mv ~/Downloads/timemap-macos /usr/local/bin/timemap
+```
+
+2. Make it executable
+
+```bash
+sudo chmod +x /usr/local/bin/timemap
+```
+
+3. Run
+```bash
+timemap
+```
+to start the TUI.
 
 #### Windows Users
 
@@ -95,23 +128,30 @@ There are four types of items:
 
 ## Uninstall
 
-### Binary
-#### Mac/Linux
+You only need to 
+- delete the `exe` or binary file or python program, 
+- delete the configuration file,
+- delete the database (be careful, you can not recover your diary or notes. You can `timemap --output` and backup first. Note that to-do-lists can not be exported.)
+
+For example, for mac/linux users:
 
 1. Uninstall the app
 
 ```bash
 sudo rm /usr/local/bin/timemap
 ```
+
 2. Remove configuration
 
 ```bash
 rm -rf ~/.config/timemap
 ```
 
-3. Remove Database (Your Diary/Notes/Todo). Be careful, if you have not exported and backed up, this process is not reversible.
+3. Remove Database (Your Diary/Notes/Todo). Be careful, this process is not reversible.
 
 ```bash
 rm ~/.local/share/timemap.db
 ```
+
+
 
