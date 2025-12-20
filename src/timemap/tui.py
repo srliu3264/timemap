@@ -1,6 +1,6 @@
 from textual.app import App, ComposeResult
 from textual.containers import Grid, Vertical, Horizontal, Container, ScrollableContainer, VerticalScroll
-from textual.widgets import Header, Footer, Button, Label, ListView, ListItem, Input, TextArea, Select
+from textual.widgets import Header, Footer, Button, Label, ListView, ListItem, Input, TextArea, Select, Static
 from textual.screen import ModalScreen
 from textual.binding import Binding
 from textual import on, events, work
@@ -12,7 +12,7 @@ import os
 import re
 import shutil
 from pathlib import Path
-
+from textual_plotext import PlotextPlot
 from . import db, config
 
 # --- UTILS ---
@@ -429,7 +429,9 @@ class HelpScreen(ModalScreen):
                     Label(
                         "ctrl+p", classes="help-key"),     Label("Command Palette", classes="help-desc"),
                     Label(
-                        "d", classes="help-key"),           Label("Toggle View", classes="help-desc"),
+                        "d", classes="help-key"),           Label("Toggle Details", classes="help-desc"),
+                    Label(
+                        "S (shift+s)", classes="help-key"),           Label("Toggle Stats charts", classes="help-desc"),
                     Label(
                         "?", classes="help-key"),           Label("Toggle Help", classes="help-desc"),
                     Label(
@@ -484,6 +486,84 @@ class HelpScreen(ModalScreen):
 
     def action_close_help(self): self.dismiss()
     def on_button_pressed(self, event): self.dismiss()
+
+
+class StatsScreen(ModalScreen):
+    BINDINGS = [Binding("escape", "close", "Close"),
+                Binding("S", "close", "Close")]
+
+    def __init__(self, year: int):
+        super().__init__()
+        self.year = year
+        self.stats = db.get_year_stats(year)
+
+    def compose(self) -> ComposeResult:
+        yield Container(
+            Label(f"Statistics for {self.year}", id="stats-title"),
+            Grid(
+                Vertical(Label("Diaries"), PlotextPlot(
+                    id="plot-diary"), classes="plot-box"),
+                Vertical(Label("Notes (Trend)"), PlotextPlot(
+                    id="plot-note"), classes="plot-box"),
+                Vertical(Label("Todos (Progress)"), PlotextPlot(
+                    id="plot-todo"), classes="plot-box"),
+                Vertical(Label("Files"), PlotextPlot(
+                    id="plot-file"), classes="plot-box"),
+                id="stats-grid"
+            ),
+            Button("Close", variant="primary", id="btn-stats-close"),
+            id="stats-dialog"
+        )
+
+    def on_mount(self):
+        months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+        indices = list(range(len(months)))  # Use indices 0-11 for Line charts
+
+        # 1. Diary Plot (Bar)
+        p_diary = self.query_one("#plot-diary", PlotextPlot)
+        p_diary.plt.bar(months, self.stats['diary'], color="magenta")
+        p_diary.plt.frame(False)
+        p_diary.plt.yticks(self.stats['diary'])
+
+        # 2. Note Plot (Line Chart)
+        p_note = self.query_one("#plot-note", PlotextPlot)
+        p_note.plt.plot(
+            indices, self.stats['note'], color="green", marker="dot")
+        p_note.plt.xticks(indices, months)  # Manually label X-axis
+        p_note.plt.frame(False)
+        p_note.plt.ylim(0)
+
+        # 3. Todo Plot (Stacked Bar)
+        # We pass a List of Lists [[done], [pending]] to satisfy plotext structure
+        t_created = sum(self.stats['todo_created'])
+        t_done = sum(self.stats['todo_done'])
+        t_pending = max(0, t_created - t_done)
+
+        p_todo = self.query_one("#plot-todo", PlotextPlot)
+        if t_created > 0:
+            p_todo.plt.stacked_bar(
+                ["Year"],                    # X-axis label
+                [[t_done], [t_pending]],     # Y-axis Data Matrix
+                labels=["Done", "Pending"],  # Legend Labels
+                color=["cyan", "blue"]      # Colors
+            )
+            p_todo.plt.title(f"{int((t_done/t_created)*100)}% Complete")
+            p_todo.plt.frame(False)
+            p_todo.plt.ylim(0, t_created)
+        else:
+            p_todo.plt.title("No Data")
+
+        # 4. File Plot (Bar)
+        p_file = self.query_one("#plot-file", PlotextPlot)
+        p_file.plt.bar(months, self.stats['file'], color="yellow")
+        p_file.plt.frame(False)
+
+    def action_close(self):
+        self.dismiss()
+
+    @on(Button.Pressed, "#btn-stats-close")
+    def on_close_btn(self): self.dismiss()
 
 
 class DetailItem(ListItem):
@@ -814,6 +894,32 @@ class TimeMapApp(App):
 
    .list-header { background: $surface-lighten-1; color: $accent; text-style: bold; height: 1; content-align: center middle; margin: 1 0; }
     .todo-done { color: $text-muted; text-style: strike; }
+
+    #stats-dialog {
+        width: 95%;
+        height: 95%;
+        background: $surface;
+        border: thick $background 80%;
+        layout: vertical;
+        padding: 1;
+    }
+    #stats-grid {
+        width: 100%;
+        height: 1fr;
+        layout: grid;
+        grid-size: 2 2;
+        grid-gutter: 1;
+    }
+    .plot-box {
+        width: 100%;
+        height: 100%;
+        background: $surface-lighten-1;
+        padding: 1;
+    }
+    PlotextPlot {
+        width: 100%;
+        height: 1fr;
+    }
     """
 
     BINDINGS = [
@@ -839,6 +945,7 @@ class TimeMapApp(App):
         Binding("N", "show_create_menu", "New Item"),
         Binding("d", "toggle_view", "Toggle View"),
         Binding("u", "recover_item", "Recover"),
+        Binding("S", "show_stats", "Stats"),
 
     ]
 
@@ -1137,6 +1244,9 @@ class TimeMapApp(App):
                     self.push_screen(OpenMethodScreen(), callback)
         except Exception:
             pass
+
+    def action_show_stats(self):
+        self.push_screen(StatsScreen(self.display_year))
 
     def open_file(self, path, command):
         if not os.path.exists(path):

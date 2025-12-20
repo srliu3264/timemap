@@ -278,3 +278,75 @@ def get_month_stats(year: int, month: int) -> dict:
 
     conn.close()
     return stats
+
+
+def get_year_stats(year: int) -> dict:
+    """
+    Returns aggregated stats for the given year.
+    Structure: {
+        'diary': [count_jan, count_feb, ...],
+        'note': [...],
+        'file': [...],
+        'todo_created': [...],
+        'todo_done': [...],
+        'total_todos': int,
+        'finished_todos': int
+    }
+    """
+    conn = get_db()
+    c = conn.cursor()
+
+    stats = {
+        'diary': [0] * 12,
+        'note': [0] * 12,
+        'file': [0] * 12,
+        'todo_created': [0] * 12,
+        'todo_done': [0] * 12,
+        'total_todos': 0,
+        'finished_todos': 0
+    }
+
+    search_pattern = f"{year}-%"
+
+    c.execute("""
+        SELECT type, date, is_done 
+        FROM items 
+        WHERE date LIKE ? AND deleted_at IS NULL
+    """, (search_pattern,))
+
+    for type_, date_str, is_done in c.fetchall():
+        try:
+            d = date.fromisoformat(date_str)
+            month_idx = d.month - 1  # 0-11
+
+            if type_ == 'diary':
+                stats['diary'][month_idx] += 1
+            elif type_ == 'note':
+                stats['note'][month_idx] += 1
+            elif type_ == 'file':
+                stats['file'][month_idx] += 1
+            elif type_ == 'todo':
+                stats['todo_created'][month_idx] += 1
+                stats['total_todos'] += 1
+        except ValueError:
+            pass
+
+    c.execute("""
+        SELECT finish_date FROM items 
+        WHERE type = 'todo' 
+          AND is_done = 1 
+          AND finish_date LIKE ? 
+          AND deleted_at IS NULL
+    """, (search_pattern,))
+
+    for (finish_date_str,) in c.fetchall():
+        try:
+            d = date.fromisoformat(finish_date_str)
+            month_idx = d.month - 1
+            stats['todo_done'][month_idx] += 1
+            stats['finished_todos'] += 1
+        except ValueError:
+            pass
+
+    conn.close()
+    return stats
