@@ -771,7 +771,12 @@ class TagGraphScreen(ModalScreen):
     ASCII Graph Visualization:
     Star -> [Tag] -> [Item] -> [Item]
     """
-    BINDINGS = [Binding("escape", "close", "Close")]
+    BINDINGS = [
+        Binding("escape", "close", "Close"),
+        Binding("g", "close", "Close"),
+        Binding("j", "scroll_down", "Down"),
+        Binding("k", "scroll_up", "Up"),
+    ]
 
     def compose(self) -> ComposeResult:
         yield Container(
@@ -781,27 +786,31 @@ class TagGraphScreen(ModalScreen):
             id="graph-dialog"
         )
 
+    def action_scroll_down(self):
+        self.query_one("#graph-area").scroll_down()
+
+    def action_scroll_up(self):
+        self.query_one("#graph-area").scroll_up()
+
+    def action_close(self):
+        self.dismiss()
+
     def generate_graph(self):
         tags = db.get_all_tags()
         lines = []
 
-        # Root Star
         lines.append("[bold yellow]★ ROOT[/]")
 
         for t_id, t_name, _ in tags:
-            # Tag Node
             lines.append(f"  └── [bold cyan]■ {t_name}[/]")
 
-            # Get items for this tag sorted by date
             items = db.get_items_by_tag(t_id)
 
-            # Draw chain of items
             for idx, item in enumerate(items):
                 is_last = (idx == len(items) - 1)
                 prefix = "      "
                 connector = "└──" if is_last else "├──"
 
-                # Color based on type
                 itype = item[1]
                 color = "white"
                 if itype == 'diary':
@@ -813,14 +822,11 @@ class TagGraphScreen(ModalScreen):
                 elif itype == 'file':
                     color = "yellow"
 
-                name = item[5] if item[5] else item[2][:20]  # Alias or Content
+                name = item[5] if item[5] else item[2][:20]
                 date_str = item[7]
 
                 node = f"{prefix}{connector} [{color}]● {date_str}: {name}[/]"
                 lines.append(node)
-
-                # If we want to strictly follow "connected to adjacent items" visually:
-                # The tree structure naturally implies sequence.
 
         return "\n".join(lines)
 
