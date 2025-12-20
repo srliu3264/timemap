@@ -477,6 +477,21 @@ class HelpScreen(ModalScreen):
                         "f", classes="help-key"), Label(r"\[T]Toggle Finish", classes="help-desc"),
                     classes="help-grid"
                 ),
+                Label("Tags (List)", classes="help-section-title"),
+                Grid(
+                    Label(
+                        "v", classes="help-key"),     Label("View the tag", classes="help-desc"),
+                    Label(
+                        "g", classes="help-key"), Label("Toggle Graph View", classes="help-desc"),
+                    classes="help-grid"
+                ),
+                Label("Items List (for a tag)", classes="help-section-title"),
+                Grid(
+                    Label(
+                        "d", classes="help-key"),     Label("Go to corresponding Date", classes="help-desc"),
+                    classes="help-grid"
+                ),
+
                 id="help-scroll"
             ),
 
@@ -629,6 +644,7 @@ class TagListScreen(ModalScreen):
     """Browses all tags."""
     BINDINGS = [
         Binding("escape", "close", "Close"),
+        Binding("C", "close", "Close"),
         Binding("g", "show_graph", "Graph View"),
         Binding("v", "view_items", "View Items"),
         Binding("j", "down", "Down"),
