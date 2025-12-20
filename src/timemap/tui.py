@@ -22,15 +22,16 @@ import platform
 
 def open_url(url):
     system = platform.system()
+    clean_env = config.get_system_env()
     try:
         if system == "Windows":
             os.startfile(url)
         elif system == "Darwin":
-            subprocess.Popen(
-                ['open', url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.Popen(['open', url], stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL, env=clean_env)
         else:
-            subprocess.Popen(
-                ['xdg-open', url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.Popen(['xdg-open', url], stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL, env=clean_env)
     except Exception:
         pass
 
@@ -1593,9 +1594,10 @@ class TimeMapApp(App):
         if not os.path.exists(path):
             self.notify("File missing", severity="error")
             return
+        clean_env = config.get_system_env()
         if platform.system() == "Windows":
             try:
-                subprocess.Popen([command, path], shell=True)
+                subprocess.Popen([command, path], shell=True, env=clean_env)
             except FileNotFoundError:
                 self.notify(f"Command '{command}' not found", severity="error")
             return
@@ -1606,7 +1608,8 @@ class TimeMapApp(App):
             cmd_list = [term, "-e", command, path]
         try:
             subprocess.Popen(cmd_list, start_new_session=True,
-                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                             env=clean_env)
         except FileNotFoundError:
             self.notify(f"Command '{command}' not found", severity="error")
 

@@ -2,6 +2,8 @@ import os
 import toml
 import shutil
 import platform
+import subprocess
+import sys
 
 IS_WINDOWS = platform.system() == "Windows"
 IS_MAC = platform.system() == "Darwin"
@@ -36,6 +38,19 @@ DEFAULT_CONFIG = f"""
 """
 
 
+def get_system_env():
+    """
+    Removes PyInstaller's library paths so external apps (nvim, sh) 
+    don't crash with 'symbol lookup error'.
+    """
+    env = os.environ.copy()
+    if 'LD_LIBRARY_PATH_ORIG' in env:
+        env['LD_LIBRARY_PATH'] = env['LD_LIBRARY_PATH_ORIG']
+    elif 'LD_LIBRARY_PATH' in env and getattr(sys, 'frozen', False):
+        del env['LD_LIBRARY_PATH']
+    return env
+
+
 def ensure_config():
     if not os.path.exists(CONFIG_DIR):
         os.makedirs(CONFIG_DIR)
@@ -67,7 +82,6 @@ def get_open_command(filepath: str):
 
     ext = os.path.splitext(filepath)[1].lower().strip('.')
 
-    # Check exact extension match
     if ext in defaults:
         return defaults[ext]
 
@@ -77,4 +91,8 @@ def get_open_command(filepath: str):
 def edit_config():
     ensure_config()
     editor = get_editor()
-    os.system(f"{editor} {CONFIG_PATH}")
+    try:
+        subprocess.call(f"{editor} {CONFIG_PATH}",
+                        shell=True, env=get_system_env())
+    except Exception as e:
+        print(f"Error opening editor: {e}")
